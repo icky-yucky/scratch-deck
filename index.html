@@ -185,9 +185,59 @@
     box-shadow: 0 1px 0 var(--hilite);
     margin-bottom: 1px;
   }
-  .menubar span { padding: 2px 7px; }
-  .menubar span:hover { background: var(--selection); color: var(--field); }
+  .menubar span { padding: 2px 7px; cursor: default; position: relative; }
+  .menubar span:hover, .menubar span.open { background: var(--selection); color: var(--field); }
   .menubar u { text-decoration: underline; }
+
+  /* Drop-down menu panel */
+  .menu-popup {
+    display: none; position: absolute; top: 100%; left: 0; z-index: 60;
+    min-width: 160px; padding: 2px; background: var(--face);
+    border: 1px solid; border-color: var(--btn-border);
+    box-shadow: var(--btn-shadow), 2px 2px 4px rgba(0,0,0,.35);
+    color: var(--text); font-weight: normal;
+  }
+  .menubar span.open .menu-popup { display: block; }
+  .menu-popup .item { display: block; padding: 3px 18px 3px 8px; white-space: nowrap; }
+  .menu-popup .item:hover { background: var(--selection); color: var(--field); }
+
+  /* Square icon button (Repeat) */
+  button.icon-btn {
+    padding: 3px 0; width: 26px; min-width: 26px; text-align: center; font-size: 13px; line-height: 1;
+  }
+  button.icon-btn:active:not(:disabled) { padding: 3px 0; }
+
+  /* ---- Modal dialog (About) ---- */
+  .modal-backdrop {
+    display: none; position: fixed; inset: 0; z-index: 100;
+    background: rgba(0,0,0,.35); align-items: center; justify-content: center;
+  }
+  .modal-backdrop.show { display: flex; }
+  .dialog {
+    min-width: 300px; background: var(--face);
+    border: 1px solid; border-color: var(--btn-border);
+    box-shadow: var(--btn-shadow), 3px 3px 10px rgba(0,0,0,.45);
+    padding: 2px;
+  }
+  .dialog .titlebar { margin: 0 0 2px; }
+  .dialog .body { padding: 20px 24px; text-align: center; }
+  .dialog .foot { padding: 0 10px 10px; text-align: center; }
+  .dialog .foot button { min-width: 76px; }
+
+  .made-by { font-size: 12px; color: var(--muted); margin-bottom: 6px; letter-spacing: .06em; }
+  /* Stylized pink signature. Gradient text needs a plain color fallback underneath in case
+     background-clip:text is unavailable, otherwise the name would render invisible. */
+  .signature {
+    font-size: 40px; font-weight: 800; letter-spacing: .02em; line-height: 1.1;
+    font-family: Georgia, "Times New Roman", serif; font-style: italic;
+    color: #ff5fa2;
+    background: linear-gradient(180deg, #ffb3d9 0%, #ff5fa2 45%, #d6247a 100%);
+    -webkit-background-clip: text; background-clip: text;
+    -webkit-text-fill-color: transparent;
+    text-shadow: 0 1px 0 rgba(255,255,255,.35);
+    filter: drop-shadow(0 2px 3px rgba(214,36,122,.45));
+  }
+  .version-line { margin-top: 14px; font-size: 11px; color: var(--muted); }
 
   header {
     padding: 6px 8px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
@@ -340,7 +390,11 @@
     <span><u>F</u>ile</span>
     <span><u>E</u>dit</span>
     <span><u>V</u>iew</span>
-    <span><u>H</u>elp</span>
+    <span id="helpMenu"><u>H</u>elp
+      <span class="menu-popup">
+        <span class="item" id="aboutItem">About Scratch Deck...</span>
+      </span>
+    </span>
   </div>
   <header>
     <button id="loadBtn">Open File...</button>
@@ -367,6 +421,7 @@
       <span class="legend">Transport</span>
       <button id="playBtn" disabled>▶ Play</button>
       <button id="stopBtn" disabled>■ Stop</button>
+      <button id="trackLoopBtn" class="toggle icon-btn" disabled title="Repeat the whole track">↻</button>
       <span class="time" id="timeDisplay"><b>0:00.00</b> / 0:00.00</span>
     </div>
     <div class="group">
@@ -375,6 +430,14 @@
       <button id="loopEndBtn" disabled>Set End</button>
       <button id="loopToggleBtn" class="toggle" disabled>Loop: Off</button>
       <button id="loopClearBtn" disabled>Clear</button>
+    </div>
+    <div class="group">
+      <span class="legend">Saved Loops</span>
+      <button id="exportBtn" disabled>Export</button>
+      <select id="loopLibrary" style="max-width:170px"><option value="">(none saved)</option></select>
+      <button id="loadLoopBtn" disabled>Load</button>
+      <button id="renameLoopBtn" disabled>Rename</button>
+      <button id="deleteLoopBtn" disabled>Del</button>
     </div>
     <div class="group">
       <span class="legend">Zoom</span>
@@ -401,6 +464,21 @@
     </span>
     <span class="panel">Ready</span>
   </footer>
+</div>
+
+<div class="modal-backdrop" id="aboutBackdrop">
+  <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="aboutTitle">
+    <div class="titlebar" style="display:flex">
+      <span class="title" id="aboutTitle">About Scratch Deck</span>
+      <span class="tbtn close" id="aboutX">×</span>
+    </div>
+    <div class="body">
+      <div class="made-by">made by</div>
+      <div class="signature">icky</div>
+      <div class="version-line">Scratch Deck &mdash; WSOLA time-stretching deck</div>
+    </div>
+    <div class="foot"><button id="aboutOk">OK</button></div>
+  </div>
 </div>
 
 <script>
@@ -430,6 +508,29 @@
   const speedVal = document.getElementById('speedVal');
   const volSlider = document.getElementById('volSlider');
   const themeSelect = document.getElementById('themeSelect');
+  const exportBtn = document.getElementById('exportBtn');
+  const loopLibrary = document.getElementById('loopLibrary');
+  const loadLoopBtn = document.getElementById('loadLoopBtn');
+  const renameLoopBtn = document.getElementById('renameLoopBtn');
+  const deleteLoopBtn = document.getElementById('deleteLoopBtn');
+  const trackLoopBtn = document.getElementById('trackLoopBtn');
+  const helpMenu = document.getElementById('helpMenu');
+  const aboutItem = document.getElementById('aboutItem');
+  const aboutBackdrop = document.getElementById('aboutBackdrop');
+  const aboutOk = document.getElementById('aboutOk');
+  const aboutX = document.getElementById('aboutX');
+
+  // ---------- Menu + About dialog ----------
+  helpMenu.addEventListener('click', (e) => {
+    e.stopPropagation();
+    helpMenu.classList.toggle('open');
+  });
+  document.addEventListener('click', () => helpMenu.classList.remove('open'));
+  function showAbout(show) { aboutBackdrop.classList.toggle('show', show); }
+  aboutItem.addEventListener('click', () => { helpMenu.classList.remove('open'); showAbout(true); });
+  aboutOk.addEventListener('click', () => showAbout(false));
+  aboutX.addEventListener('click', () => showAbout(false));
+  aboutBackdrop.addEventListener('click', (e) => { if (e.target === aboutBackdrop) showAbout(false); });
 
   // ---------- Theme ----------
   // Canvas colors are defined in CSS alongside the rest of each theme, then read back
@@ -472,6 +573,10 @@
   let duration = 0;
   let channelPeaks = null; // Float32Array [min,max] pairs at fine resolution, per-channel merged (mono display)
   const PEAK_RES = 20000; // number of min/max buckets across whole file
+  // The copies sent to the worklet are transferred (detached), so keep the decoded buffer
+  // here as the main thread's own source of samples for exporting.
+  let sourceBuffer = null;
+  let currentName = 'loop';
 
   let viewStart = 0;      // seconds, left edge of visible window
   let viewDuration = 0;   // seconds, width of visible window
@@ -480,6 +585,7 @@
   let isScrubbing = false;   // true while actively dragging the waveform to play fwd/rev
   let scrubDirection = 1;    // +1 forward, -1 reverse (last direction while scrubbing)
   let loopStart = null, loopEnd = null, loopEnabled = false;
+  let trackLoopEnabled = false; // repeat the whole track (independent of the A/B markers)
 
   let dragging = false;
   let dragMode = null; // 'scrub' | 'pan'
@@ -561,45 +667,256 @@
       return;
     }
     filenameEl.textContent = file.name;
+    currentName = file.name.replace(/\.[^.]+$/, '');
     await loadIntoEngine(audioBuffer);
   }
 
+  // ---------- Loop export / library ----------
+  // 16-bit PCM WAV. Browsers can decode MP3 but cannot encode it, and there is no MP3
+  // encoder available here, so exports are lossless WAV rather than a lossy re-encode.
+  function encodeWAV(buffer, startSample, endSample) {
+    const nCh = buffer.numberOfChannels;
+    const len = Math.max(0, endSample - startSample);
+    const data = [];
+    for (let c = 0; c < nCh; c++) data.push(buffer.getChannelData(c));
+    const bytesPerSample = 2;
+    const blockAlign = nCh * bytesPerSample;
+    const dataSize = len * blockAlign;
+    const ab = new ArrayBuffer(44 + dataSize);
+    const view = new DataView(ab);
+    const wstr = (off, s) => { for (let i = 0; i < s.length; i++) view.setUint8(off + i, s.charCodeAt(i)); };
+    wstr(0, 'RIFF');
+    view.setUint32(4, 36 + dataSize, true);
+    wstr(8, 'WAVE');
+    wstr(12, 'fmt ');
+    view.setUint32(16, 16, true);          // PCM chunk size
+    view.setUint16(20, 1, true);           // format = PCM
+    view.setUint16(22, nCh, true);
+    view.setUint32(24, buffer.sampleRate, true);
+    view.setUint32(28, buffer.sampleRate * blockAlign, true);
+    view.setUint16(32, blockAlign, true);
+    view.setUint16(34, 16, true);          // bits per sample
+    wstr(36, 'data');
+    view.setUint32(40, dataSize, true);
+    let off = 44;
+    for (let i = 0; i < len; i++) {
+      for (let c = 0; c < nCh; c++) {
+        let s = data[c][startSample + i] || 0;
+        s = Math.max(-1, Math.min(1, s));
+        view.setInt16(off, s < 0 ? s * 0x8000 : s * 0x7fff, true);
+        off += 2;
+      }
+    }
+    return ab;
+  }
+
+  async function refreshLoopLibrary(selectName) {
+    try {
+      const res = await fetch('/api/loops');
+      const names = await res.json();
+      const list = Array.isArray(names) ? names : (names ? [names] : []);
+      loopLibrary.innerHTML = '';
+      if (!list.length) {
+        loopLibrary.innerHTML = '<option value="">(none saved)</option>';
+        loadLoopBtn.disabled = true;
+        renameLoopBtn.disabled = true;
+        deleteLoopBtn.disabled = true;
+        return;
+      }
+      for (const n of list) {
+        const opt = document.createElement('option');
+        opt.value = n; opt.textContent = n;
+        loopLibrary.appendChild(opt);
+      }
+      if (selectName && list.includes(selectName)) loopLibrary.value = selectName;
+      loadLoopBtn.disabled = false;
+      renameLoopBtn.disabled = false;
+      deleteLoopBtn.disabled = false;
+    } catch (err) {
+      loopLibrary.innerHTML = '<option value="">(server offline)</option>';
+      loadLoopBtn.disabled = true;
+      renameLoopBtn.disabled = true;
+      deleteLoopBtn.disabled = true;
+    }
+  }
+
+  exportBtn.addEventListener('click', async () => {
+    if (!sourceBuffer || loopStart === null || loopEnd === null) return;
+    const a = Math.max(0, Math.floor(Math.min(loopStart, loopEnd) * sampleRate));
+    const b = Math.min(totalSamples, Math.ceil(Math.max(loopStart, loopEnd) * sampleRate));
+    if (b <= a) return;
+    const stamp = new Date().toISOString().slice(11, 19).replace(/:/g, '');
+    const suggested = currentName + '_loop_' + stamp;
+    const chosen = window.prompt('Save loop as:', suggested);
+    if (chosen === null) return; // cancelled
+    const name = (chosen.trim() || suggested).replace(/\.wav$/i, '') + '.wav';
+    const wav = encodeWAV(sourceBuffer, a, b);
+    const prev = filenameEl.textContent;
+    filenameEl.textContent = 'Saving ' + name + ' ...';
+    try {
+      const res = await fetch('/api/loops?name=' + encodeURIComponent(name), {
+        method: 'POST',
+        headers: { 'Content-Type': 'audio/wav' },
+        body: wav
+      });
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      const out = await res.json();
+      filenameEl.textContent = 'Saved to loops\\' + out.name;
+      await refreshLoopLibrary(out.name);
+    } catch (err) {
+      filenameEl.textContent = 'Export failed (is serve.ps1 running?)';
+      console.error('Export failed:', err);
+      setTimeout(() => { filenameEl.textContent = prev; }, 4000);
+    }
+  });
+
+  renameLoopBtn.addEventListener('click', async () => {
+    const from = loopLibrary.value;
+    if (!from) return;
+    const base = from.replace(/\.wav$/i, '');
+    const chosen = window.prompt('Rename loop to:', base);
+    if (chosen === null) return;
+    const to = (chosen.trim() || base).replace(/\.wav$/i, '') + '.wav';
+    if (to === from) return;
+    try {
+      const res = await fetch('/api/loops/rename?from=' + encodeURIComponent(from) +
+                              '&to=' + encodeURIComponent(to), { method: 'POST' });
+      const out = await res.json();
+      if (!res.ok || !out.ok) {
+        filenameEl.textContent = 'Rename failed: ' + (out.error || res.status);
+        return;
+      }
+      await refreshLoopLibrary(out.name);
+      filenameEl.textContent = 'Renamed to ' + out.name;
+    } catch (err) {
+      filenameEl.textContent = 'Rename failed (is serve.ps1 running?)';
+      console.error('Rename failed:', err);
+    }
+  });
+
+  deleteLoopBtn.addEventListener('click', async () => {
+    const name = loopLibrary.value;
+    if (!name) return;
+    // deleting a file is not undoable, so make the target explicit before doing it
+    if (!window.confirm('Delete this saved loop permanently?\n\n' + name)) return;
+    try {
+      const res = await fetch('/api/loops/delete?name=' + encodeURIComponent(name), { method: 'POST' });
+      const out = await res.json();
+      if (!res.ok || !out.ok) {
+        filenameEl.textContent = 'Delete failed: ' + (out.error || res.status);
+        return;
+      }
+      await refreshLoopLibrary();
+      filenameEl.textContent = 'Deleted ' + out.name;
+    } catch (err) {
+      filenameEl.textContent = 'Delete failed (is serve.ps1 running?)';
+      console.error('Delete failed:', err);
+    }
+  });
+
+  loadLoopBtn.addEventListener('click', async () => {
+    const name = loopLibrary.value;
+    if (!name) return;
+    filenameEl.textContent = 'Loading ' + name + ' ...';
+    try {
+      await ensureAudioInit();
+      const res = await fetch('/loops/' + encodeURIComponent(name));
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      const buf = await res.arrayBuffer();
+      const audioBuffer = await audioCtx.decodeAudioData(buf);
+      filenameEl.textContent = name;
+      currentName = name.replace(/\.[^.]+$/, '');
+      await loadIntoEngine(audioBuffer);
+    } catch (err) {
+      filenameEl.textContent = 'Could not load ' + name;
+      console.error('Loop load failed:', err);
+    }
+  });
+
   // ---------- Audio engine (AudioWorklet) ----------
   const WORKLET_SRC = `
-// Hold: a stopped record is silent (DC), but we want the sound to sustain — "baaaaack".
-// So when the drag stops we loop a slice of audio at its NATURAL 1.0x rate: no time-stretch,
-// no pitch shift, no granular smearing. The only seam is the loop wrap, hidden by an
-// equal-power crossfade against the audio just before the loop start.
-const HOLD_LEN = Math.round(sampleRate * 0.28);    // ~280ms of real audio, looped
-const HOLD_XFADE = Math.round(sampleRate * 0.035); // ~35ms equal-power crossfade at the wrap
-const HOLD_ENTER = 0.03; // |rate| below this: start holding
-const HOLD_EXIT  = 0.12; // |rate| above this: release (hysteresis stops mode-flutter)
-// Position-error correction gain: a ~250ms time constant. Slow enough that the resulting
-// pitch trim is inaudible, which is the point — fast correction is what rings and warbles.
+// ============================================================================
+// WSOLA time-stretching engine (Waveform Similarity Overlap-Add).
+//
+// The previous engine resampled: it advanced a read pointer faster or slower and
+// interpolated between samples. That is literally what a turntable does, so speed and
+// pitch were locked together and every rate change bent the pitch.
+//
+// WSOLA decouples them. Output is assembled from overlapping grains taken from the
+// source. Each grain is played at its ORIGINAL sample rate — no resampling, no
+// interpolation — so pitch and timbre are exactly the recording's. Tempo is controlled
+// purely by how far the read position moves between grains. Consequences:
+//   * rate 0.5 -> grains advance half as fast -> half speed, identical pitch
+//   * rate 0   -> grains stop advancing      -> the note sustains indefinitely
+//   * rate 1   -> the correlation peak is the exact continuation, so Hann windows at
+//                 50% overlap sum to unity and the original signal is reconstructed
+//   * negative -> read position walks backwards through the file
+//
+// The "similarity" part is what avoids the phasey/warbled artifacts of naive grain
+// looping: before laying down each grain, we search a small neighbourhood for the offset
+// whose waveform best continues what was already written, so grains splice at matching
+// phase instead of fighting each other.
+// ============================================================================
+const FRAME = 1024;               // grain length (~23ms @44.1k)
+const HOP = FRAME / 2;            // synthesis hop; Hann at 50% overlap is COLA (sums to 1)
+const SEARCH = 128;               // +/- samples searched for the best splice point
+const CORR = 256;                 // samples compared when scoring a splice
+const RING = 4096;                // output queue, must exceed HOP + render quantum
+// Position-error correction: ~250ms time constant. Slow enough to be inaudible; fast
+// correction inside this loop is what used to ring and warble.
 const CORRECT_GAIN = 1 / (0.25 * sampleRate);
+
+const WINDOW = new Float32Array(FRAME);
+for (let i = 0; i < FRAME; i++) WINDOW[i] = 0.5 * (1 - Math.cos(2 * Math.PI * i / FRAME));
+
 class ScratchProcessor extends AudioWorkletProcessor {
   constructor() {
     super();
-    this.holding = false;
-    this.holdStart = 0;
-    this.holdPhase = 0;
     this.channels = [];
     this.length = 0;
-    this.position = 0;
+    this.nCh = 1;
+
+    this.position = 0;    // authoritative read position, in samples (drives the UI)
+    this.spliceAt = 0;    // where the natural continuation of the last grain begins
     this.playing = false;
     this.scrubbing = false;
-    this.scrubRate = 0;   // velocity feedforward + slow drift trim
-    this.targetVel = 0;   // measured drag velocity; this alone sets pitch
-    this.virtualPos = 0;  // continuously-advancing estimate of the finger's position
-    this.hasScrubTarget = false;
+    this.targetVel = 0;   // measured drag velocity; sets TEMPO now, not pitch
+    this.virtualPos = 0;
+    this.rate = 1;
+    this.gain = 0.9;
+
     this.loopEnabled = false;
     this.loopStart = 0;
     this.loopEnd = 0;
-    this.rate = 1;
-    this.gain = 0.9;
+
+    this.acc = [];        // per-channel overlap-add accumulator
+    this.queue = [];      // per-channel output ring
+    this.qHead = 0;
+    this.qLen = 0;
     this.reportCounter = 0;
     this.port.onmessage = (e) => this.handleMessage(e.data);
   }
+
+  allocate(nCh) {
+    this.nCh = Math.max(1, nCh);
+    this.acc = [];
+    this.queue = [];
+    for (let c = 0; c < this.nCh; c++) {
+      this.acc.push(new Float32Array(FRAME));
+      this.queue.push(new Float32Array(RING));
+    }
+    this.resetStream();
+  }
+
+  // Drop any partially-assembled audio. Called on load/seek so a jump never splices the
+  // old location onto the new one.
+  resetStream() {
+    for (let c = 0; c < this.acc.length; c++) this.acc[c].fill(0);
+    this.qHead = 0;
+    this.qLen = 0;
+    this.spliceAt = this.position;
+  }
+
   handleMessage(msg) {
     switch (msg.type) {
       case 'load':
@@ -608,6 +925,7 @@ class ScratchProcessor extends AudioWorkletProcessor {
         this.position = 0;
         this.playing = false;
         this.scrubbing = false;
+        this.allocate(msg.channels.length);
         break;
       case 'play':
         this.scrubbing = false;
@@ -621,30 +939,25 @@ class ScratchProcessor extends AudioWorkletProcessor {
         this.scrubbing = false;
         this.playing = false;
         this.position = 0;
+        this.resetStream();
         break;
       case 'seek':
         this.scrubbing = false;
         this.position = clamp(msg.position, 0, this.length);
+        this.resetStream();
         break;
       case 'scrubStart':
         this.playing = false;
         this.scrubbing = true;
-        this.scrubRate = 0;
         this.targetVel = 0;
         this.virtualPos = this.position;
-        this.holding = false;
         break;
       case 'scrubTarget':
-        // Pitch comes from the measured velocity, NOT from position error. Driving rate off
-        // error inside a loop that also lags creates an underdamped oscillation — a periodic
-        // pitch modulation heard as warble on top of the audio.
         this.virtualPos = clamp(msg.position, 0, this.length);
         this.targetVel = clamp(msg.velocity, -16, 16);
-        this.hasScrubTarget = true;
         break;
       case 'scrubEnd':
         this.scrubbing = false;
-        this.holding = false;
         break;
       case 'setLoop':
         this.loopStart = msg.loopStart;
@@ -662,101 +975,124 @@ class ScratchProcessor extends AudioWorkletProcessor {
         break;
     }
   }
-  readSample(ch, pos) {
-    const data = this.channels[Math.min(ch, this.channels.length - 1)];
-    if (!data || this.length === 0) return 0;
-    if (pos <= 1) return data[0] || 0;
-    if (pos >= this.length - 2) return data[this.length - 1] || 0;
-    // 4-point Catmull-Rom. Linear interpolation between two samples acts as a low-pass
-    // whose strength varies with the fractional offset, which dulls highs and adds a
-    // flange-like coloration as the position drifts. Cubic keeps the top end intact.
-    const i = Math.floor(pos);
-    const f = pos - i;
-    const xm1 = data[i - 1], x0 = data[i], x1 = data[i + 1], x2 = data[i + 2];
-    const c = (x1 - xm1) * 0.5;
-    const v = x0 - x1;
-    const w = c + v;
-    const a = w + v + (x2 - x0) * 0.5;
-    const b = w + a;
-    return ((a * f - b) * f + c) * f + x0;
+
+  // Score how well a grain starting at k continues what we already wrote. Normalising by
+  // the candidate's own energy stops the search from simply chasing the loudest nearby
+  // material instead of the best-matching material.
+  scoreAt(data, k, t) {
+    let dot = 0, energy = 1e-9;
+    const n = this.length;
+    for (let j = 0; j < CORR; j++) {
+      const ka = k + j, tb = t + j;
+      const a = (ka >= 0 && ka < n) ? data[ka] : 0;
+      const b = (tb >= 0 && tb < n) ? data[tb] : 0;
+      dot += a * b;
+      energy += a * a;
+    }
+    return dot / Math.sqrt(energy);
   }
+
+  // Coarse-to-fine search: a stride-4 sweep, then a +/-3 refinement around the winner.
+  // Full stride-1 over the whole window would be ~4x the cost for the same answer.
+  findSplice(desired) {
+    const data = this.channels[0];
+    if (!data) return desired;
+    const t = this.spliceAt;
+    let bestK = desired, bestScore = -Infinity;
+    for (let k = desired - SEARCH; k <= desired + SEARCH; k += 4) {
+      const s = this.scoreAt(data, k, t);
+      if (s > bestScore) { bestScore = s; bestK = k; }
+    }
+    const lo = bestK - 3, hi = bestK + 3;
+    for (let k = lo; k <= hi; k++) {
+      if (k === bestK) continue;
+      const s = this.scoreAt(data, k, t);
+      if (s > bestScore) { bestScore = s; bestK = k; }
+    }
+    return bestK;
+  }
+
+  // Advance the read position by one synthesis hop's worth of source material.
+  advancePosition() {
+    let rate;
+    if (this.scrubbing) {
+      this.virtualPos = clamp(this.virtualPos + this.targetVel * HOP, 0, this.length);
+      rate = this.targetVel + (this.virtualPos - this.position) * CORRECT_GAIN;
+    } else {
+      rate = this.rate;
+    }
+    this.position += rate * HOP;
+
+    if (this.loopEnabled && this.loopEnd > this.loopStart) {
+      if (this.position >= this.loopEnd) {
+        this.position = this.loopStart + (this.position - this.loopEnd);
+      } else if (this.position < this.loopStart) {
+        this.position = this.loopEnd - (this.loopStart - this.position);
+      }
+    } else if (this.position >= this.length) {
+      this.position = this.length;
+      if (this.playing) this.playing = false;
+    } else if (this.position <= 0) {
+      this.position = 0;
+      if (this.playing && !this.scrubbing) this.playing = false;
+    }
+  }
+
+  // Produce one hop (HOP samples) of output into the ring.
+  generateHop() {
+    this.advancePosition();
+    const k = this.findSplice(Math.round(this.position));
+    const n = this.length;
+
+    for (let c = 0; c < this.nCh; c++) {
+      const data = this.channels[Math.min(c, this.channels.length - 1)];
+      const acc = this.acc[c];
+      const q = this.queue[c];
+      // Lay the windowed grain over the accumulator.
+      for (let j = 0; j < FRAME; j++) {
+        const idx = k + j;
+        acc[j] += ((idx >= 0 && idx < n) ? data[idx] : 0) * WINDOW[j];
+      }
+      // The first HOP samples now have both overlapping contributions, so they are final.
+      let w = (this.qHead + this.qLen) % RING;
+      for (let j = 0; j < HOP; j++) {
+        q[w] = acc[j];
+        w = w + 1 === RING ? 0 : w + 1;
+      }
+      // Slide the accumulator down and clear the newly exposed tail.
+      acc.copyWithin(0, HOP, FRAME);
+      acc.fill(0, FRAME - HOP, FRAME);
+    }
+    this.qLen += HOP;
+    this.spliceAt = k + HOP;
+  }
+
   process(inputs, outputs) {
     const output = outputs[0];
     const frames = output[0] ? output[0].length : 128;
     const nOut = output.length;
-    for (let i = 0; i < frames; i++) {
-      if (this.scrubbing && this.length > 0) {
-        // The virtual finger advances continuously between pointer updates, so the position
-        // error stays near zero instead of sawtoothing once per event — that sawtooth, fed
-        // through a correction term, is what modulated the pitch.
-        this.virtualPos = clamp(this.virtualPos + this.targetVel, 0, this.length);
-        // Rate = measured velocity (sets pitch, smooth) + a slow trim for accumulated drift.
-        this.scrubRate = this.targetVel + (this.virtualPos - this.position) * CORRECT_GAIN;
-        // Hold decisions key off the commanded velocity, not the trimmed rate, so the
-        // correction term can never flutter the mode back and forth.
-        const speed = this.targetVel < 0 ? -this.targetVel : this.targetVel;
-        if (!this.holding && speed < HOLD_ENTER) {
-          this.holding = true;
-          this.holdStart = this.position;
-          this.holdPhase = 0;
-        } else if (this.holding && speed > HOLD_EXIT) {
-          this.holding = false;
-        }
-        if (this.holding) {
-          // position stays put (the needle holds); only the loop read head advances.
-          // Keep the virtual finger pinned too, so releasing the hold starts from zero error.
-          this.virtualPos = this.position;
-          this.holdPhase += 1;
-          if (this.holdPhase >= HOLD_LEN) this.holdPhase -= HOLD_LEN;
-        } else {
-          this.position += this.scrubRate;
-          this.position = clamp(this.position, 0, this.length);
-        }
-      } else if (this.playing && this.length > 0) {
-        this.position += this.rate;
-        if (this.loopEnabled && this.loopEnd > this.loopStart) {
-          if (this.position >= this.loopEnd) {
-            this.position = this.loopStart + (this.position - this.loopEnd);
-          } else if (this.position < this.loopStart) {
-            this.position = this.loopEnd - (this.loopStart - this.position);
-          }
-        } else if (this.position >= this.length) {
-          this.position = this.length;
-          this.playing = false;
-        } else if (this.position <= 0) {
-          this.position = 0;
-          this.playing = false;
-        }
-      }
-      // Held: read the loop at natural rate. Only one read is active at a time (except inside
-      // the short wrap crossfade), so there is no comb filtering — that simultaneous two-read
-      // mixing was the source of the hollow/phasey artifact.
-      let xfade = 0, tailPos = 0, headPos = 0;
-      const held = this.holding && this.scrubbing && this.length > 0;
-      if (held) {
-        tailPos = this.holdStart + this.holdPhase;
-        if (this.holdPhase > HOLD_LEN - HOLD_XFADE) {
-          xfade = (this.holdPhase - (HOLD_LEN - HOLD_XFADE)) / HOLD_XFADE; // 0 -> 1
-          headPos = this.holdStart + (this.holdPhase - HOLD_LEN);          // pre-roll before loop start
-        }
-      }
 
+    const active = (this.playing || this.scrubbing) && this.length > 0 && this.channels.length > 0;
+    if (!active) {
+      for (let ch = 0; ch < nOut; ch++) output[ch].fill(0);
+      // Drop queued audio while stopped so resuming never replays a stale tail.
+      this.qHead = 0;
+      this.qLen = 0;
+    } else {
+      while (this.qLen < frames) this.generateHop();
       for (let ch = 0; ch < nOut; ch++) {
-        let s;
-        if (held) {
-          s = this.readSample(ch, tailPos);
-          if (xfade > 0) {
-            // equal-power crossfade keeps perceived loudness constant through the wrap
-            const a = Math.cos(xfade * Math.PI / 2);
-            const b = Math.sin(xfade * Math.PI / 2);
-            s = s * a + this.readSample(ch, headPos) * b;
-          }
-        } else {
-          s = this.readSample(ch, this.position);
+        const q = this.queue[Math.min(ch, this.nCh - 1)];
+        const out = output[ch];
+        let r = this.qHead;
+        for (let i = 0; i < frames; i++) {
+          out[i] = q[r] * this.gain;
+          r = r + 1 === RING ? 0 : r + 1;
         }
-        output[ch][i] = s * this.gain;
       }
+      this.qHead = (this.qHead + frames) % RING;
+      this.qLen -= frames;
     }
+
     this.reportCounter++;
     if (this.reportCounter >= 4) {
       this.reportCounter = 0;
@@ -798,6 +1134,7 @@ registerProcessor('scratch-processor', ScratchProcessor);
 
   async function loadIntoEngine(audioBuffer) {
     if (audioCtx.state === 'suspended') await audioCtx.resume();
+    sourceBuffer = audioBuffer;
     sampleRate = audioBuffer.sampleRate;
     totalSamples = audioBuffer.length;
     duration = audioBuffer.duration;
@@ -817,8 +1154,9 @@ registerProcessor('scratch-processor', ScratchProcessor);
     isPlaying = false; isScrubbing = false;
 
     waveWrap.classList.remove('no-file');
-    [playBtn, stopBtn, loopStartBtn, loopEndBtn, loopToggleBtn, loopClearBtn,
+    [playBtn, stopBtn, trackLoopBtn, loopStartBtn, loopEndBtn, loopToggleBtn, loopClearBtn,
      zoomOutBtn, zoomInBtn, zoomFitBtn, speedSlider].forEach(b => b.disabled = false);
+    syncLoop(); // re-arm whichever loop mode is active for the newly loaded track
 
     resizeCanvases();
     updateTimeDisplay();
@@ -970,6 +1308,11 @@ registerProcessor('scratch-processor', ScratchProcessor);
   function updateLoopUI() {
     loopToggleBtn.textContent = 'Loop: ' + (loopEnabled ? 'On' : 'Off');
     loopToggleBtn.classList.toggle('on', loopEnabled);
+    // icon-only button: state reads from the pressed-in look, details live in the tooltip
+    trackLoopBtn.classList.toggle('on', trackLoopEnabled);
+    trackLoopBtn.title = (loopEnabled && loopStart !== null && loopEnd !== null)
+      ? 'Repeat: ' + (trackLoopEnabled ? 'On' : 'Off') + ' — the A/B loop is active and takes precedence'
+      : 'Repeat whole track: ' + (trackLoopEnabled ? 'On' : 'Off');
   }
 
   // ---------- Animation loop: keep the playhead pinned under the fixed needle ----------
@@ -1036,13 +1379,23 @@ registerProcessor('scratch-processor', ScratchProcessor);
     loopEnabled = !loopEnabled;
     updateLoopUI(); syncLoop();
   });
+  trackLoopBtn.addEventListener('click', () => {
+    trackLoopEnabled = !trackLoopEnabled;
+    updateLoopUI(); syncLoop();
+  });
   function syncLoop() {
-    workletNode.port.postMessage({
-      type: 'setLoop',
-      loopStart: (loopStart||0) * sampleRate,
-      loopEnd: (loopEnd||0) * sampleRate,
-      loopEnabled: loopEnabled && loopStart !== null && loopEnd !== null
-    });
+    // exporting needs a bounded region, so it stays disabled until both markers are down
+    exportBtn.disabled = !(loopStart !== null && loopEnd !== null);
+    // The engine has one loop region, so resolve the two controls here: an armed A/B loop
+    // is the more specific intent and wins; otherwise Repeat spans the whole track.
+    const markerLoop = loopEnabled && loopStart !== null && loopEnd !== null;
+    let a = 0, b = 0, on = false;
+    if (markerLoop) {
+      a = loopStart * sampleRate; b = loopEnd * sampleRate; on = true;
+    } else if (trackLoopEnabled && totalSamples > 0) {
+      a = 0; b = totalSamples; on = true;
+    }
+    workletNode.port.postMessage({ type: 'setLoop', loopStart: a, loopEnd: b, loopEnabled: on });
   }
 
   zoomInBtn.addEventListener('click', () => zoom(0.6));
@@ -1221,6 +1574,7 @@ registerProcessor('scratch-processor', ScratchProcessor);
   try { savedTheme = localStorage.getItem('scratchdeck-theme'); } catch (e) {}
   const validThemes = ['win2k', 'win2k-night', 'dark'];
   applyTheme(validThemes.includes(savedTheme) ? savedTheme : 'win2k');
+  refreshLoopLibrary();
 
 })();
 </script>
