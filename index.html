@@ -1,0 +1,1228 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Scratch Deck</title>
+<style>
+  /* ---- Themes ----
+     Every theme is just a set of custom properties: palette, a few structural knobs
+     (radius, bevel borders/shadows) and the canvas colors. The canvas colors live here
+     too so CSS stays the single source of truth — the JS drawing code reads them back
+     out with getComputedStyle rather than hardcoding a second palette. */
+
+  /* Windows 2000 classic. Bevels the authentic way: 1px hard border colors, no gradients,
+     no radii. Raised = white top-left / dark bottom-right; sunken = the inverse. */
+  :root, :root[data-theme="win2k"] {
+    --desktop: #008080;     /* the teal desktop everyone remembers */
+    --face: #d4d0c8;        /* the classic 3D face gray */
+    --face-lite: #efeae3;   /* eggshell highlight */
+    --hilite: #ffffff;
+    --shadow: #808080;
+    --dkshadow: #404040;
+    --text: #000000;
+    --muted: #404040;
+    --disabled: #808080;
+    --title1: #000080;      /* navy title bar */
+    --title2: #1084d0;
+    --title-ink: #ffffff;
+    --field: #ffffff;
+    --selection: #000080;
+
+    --font: "MS Sans Serif", Tahoma, Geneva, Verdana, sans-serif;
+    --font-size: 11px;
+    --radius: 0;
+    --btn-border: var(--hilite) var(--dkshadow) var(--dkshadow) var(--hilite);
+    --btn-shadow: inset 1px 1px 0 var(--face-lite), inset -1px -1px 0 var(--shadow);
+    --btn-border-active: var(--dkshadow) var(--hilite) var(--hilite) var(--dkshadow);
+    --btn-shadow-active: inset 1px 1px 0 var(--shadow);
+    --btn-press: translate(1px, 1px);
+    --sunken-border: var(--shadow) var(--hilite) var(--hilite) var(--shadow);
+    --sunken-shadow: inset 1px 1px 0 var(--dkshadow);
+    --group-border: 1px solid var(--shadow);
+    --group-shadow: 1px 1px 0 var(--hilite), inset -1px -1px 0 var(--hilite);
+    --chrome: flex;         /* titlebar / menubar visibility (they are flex rows) */
+
+    --wave-bg: #ffffff;
+    --wave-ink: #000080;
+    --wave-center: #c0c0c0;
+    --ruler-bg: #d4d0c8;
+    --ruler-ink: #000000;
+    --ruler-tick: #808080;
+    --loop-fill: rgba(0,0,128,0.10);
+    --loop-edge: #008080;
+    --needle-idle: #ff0000;
+    --needle-fwd: #000080;
+    --needle-rev: #800000;
+  }
+
+  /* Windows 2000 after dark: same bevel geometry, inverted luminance. */
+  :root[data-theme="win2k-night"] {
+    --desktop: #0a2222;
+    --face: #3b3b3b;
+    --face-lite: #4a4a4a;
+    --hilite: #6a6a6a;
+    --shadow: #1e1e1e;
+    --dkshadow: #0d0d0d;
+    --text: #e4e4e4;
+    --muted: #b0b0b0;
+    --disabled: #7a7a7a;
+    --title1: #101038;
+    --title2: #2b5580;
+    --title-ink: #f0f0f0;
+    --field: #191919;
+    --selection: #2b5580;
+
+    --font: "MS Sans Serif", Tahoma, Geneva, Verdana, sans-serif;
+    --font-size: 11px;
+    --radius: 0;
+    --btn-border: var(--hilite) var(--dkshadow) var(--dkshadow) var(--hilite);
+    --btn-shadow: inset 1px 1px 0 var(--face-lite), inset -1px -1px 0 var(--shadow);
+    --btn-border-active: var(--dkshadow) var(--hilite) var(--hilite) var(--dkshadow);
+    --btn-shadow-active: inset 1px 1px 0 var(--shadow);
+    --btn-press: translate(1px, 1px);
+    --sunken-border: var(--shadow) var(--hilite) var(--hilite) var(--shadow);
+    --sunken-shadow: inset 1px 1px 0 var(--dkshadow);
+    --group-border: 1px solid var(--shadow);
+    --group-shadow: 1px 1px 0 var(--hilite), inset -1px -1px 0 var(--hilite);
+    --chrome: flex;
+
+    --wave-bg: #191919;
+    --wave-ink: #5f8fd0;
+    --wave-center: #3a3a3a;
+    --ruler-bg: #3b3b3b;
+    --ruler-ink: #d8d8d8;
+    --ruler-tick: #6a6a6a;
+    --loop-fill: rgba(95,143,208,0.14);
+    --loop-edge: #38b0b0;
+    --needle-idle: #ff4040;
+    --needle-fwd: #5f8fd0;
+    --needle-rev: #ff4040;
+  }
+
+  /* The original flat dark-blue look: no bevels, rounded corners, accent-driven. */
+  :root[data-theme="dark"] {
+    --desktop: #14161c;
+    --face: #1c1f27;
+    --face-lite: #232733;
+    --hilite: #333a4a;
+    --shadow: #333a4a;
+    --dkshadow: #333a4a;
+    --text: #e6e8ef;
+    --muted: #8a90a3;
+    --disabled: #5a6070;
+    --title1: #1c1f27;
+    --title2: #1c1f27;
+    --title-ink: #5ec8f8;
+    --field: #14161c;
+    --selection: #5ec8f8;
+
+    --font: -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    --font-size: 12px;
+    --radius: 6px;
+    --btn-border: var(--hilite);
+    --btn-shadow: none;
+    --btn-border-active: var(--hilite);
+    --btn-shadow-active: none;
+    --btn-press: translateY(1px);
+    --sunken-border: var(--hilite);
+    --sunken-shadow: none;
+    --group-border: 1px solid var(--hilite);
+    --group-shadow: none;
+    --chrome: none;         /* the original had no titlebar/menubar */
+
+    --wave-bg: #0d0f14;
+    --wave-ink: #5ec8f8;
+    --wave-center: #242a36;
+    --ruler-bg: #10121a;
+    --ruler-ink: #8a90a3;
+    --ruler-tick: #333a4a;
+    --loop-fill: rgba(94,200,248,0.12);
+    --loop-edge: #f5a623;
+    --needle-idle: #ff4d6d;
+    --needle-fwd: #5ec8f8;
+    --needle-rev: #ff4d6d;
+  }
+
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0; height: 100%;
+    background: var(--desktop);
+    color: var(--text);
+    font-family: var(--font);
+    font-size: var(--font-size);
+    user-select: none;
+  }
+  #app {
+    display: flex; flex-direction: column; height: 100vh;
+    background: var(--face);
+    border: 1px solid;
+    border-color: var(--btn-border);
+    box-shadow: var(--btn-shadow);
+  }
+
+  /* Title bar */
+  .titlebar {
+    display: var(--chrome); align-items: center; gap: 2px;
+    margin: 2px; padding: 2px 2px 2px 4px;
+    background: linear-gradient(to right, var(--title1), var(--title2));
+    color: var(--title-ink); font-weight: bold; font-size: 12px;
+  }
+  .titlebar .title { flex: 1; }
+  .titlebar .tbtn {
+    flex: 0 0 auto;
+    width: 16px; height: 14px; background: var(--face);
+    border: 1px solid; border-color: var(--btn-border);
+    box-shadow: var(--btn-shadow);
+    color: var(--text); font-size: 9px; line-height: 1;
+    display: flex; align-items: center; justify-content: center; font-weight: bold;
+  }
+  .titlebar .tbtn.close { margin-left: 2px; } /* the classic gap before Close */
+
+  /* Menu bar */
+  .menubar {
+    display: var(--chrome); gap: 2px; padding: 1px 4px 3px;
+    border-bottom: 1px solid var(--shadow);
+    box-shadow: 0 1px 0 var(--hilite);
+    margin-bottom: 1px;
+  }
+  .menubar span { padding: 2px 7px; }
+  .menubar span:hover { background: var(--selection); color: var(--field); }
+  .menubar u { text-decoration: underline; }
+
+  header {
+    padding: 6px 8px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  }
+  .filename {
+    flex: 1; min-width: 120px; padding: 3px 5px;
+    background: var(--field); color: var(--text); border-radius: var(--radius);
+    border: 1px solid; border-color: var(--sunken-border);
+    box-shadow: var(--sunken-shadow);
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+
+  /* Raised button (bevelled in the win2k themes, flat+rounded in the dark one) */
+  button, select {
+    background: var(--face); color: var(--text); border-radius: var(--radius);
+    border: 1px solid; border-color: var(--btn-border);
+    box-shadow: var(--btn-shadow);
+    padding: 3px 9px; font-family: inherit; font-size: var(--font-size); cursor: default;
+    min-height: 21px;
+  }
+  select { padding: 2px 4px; }
+  button:focus { outline: 1px dotted var(--text); outline-offset: -4px; }
+  button:active:not(:disabled) {
+    border-color: var(--btn-border-active);
+    box-shadow: var(--btn-shadow-active);
+    transform: var(--btn-press);
+  }
+  button.toggle.on {
+    border-color: var(--btn-border-active);
+    box-shadow: var(--btn-shadow-active);
+    background-color: var(--face);
+    background-image: repeating-conic-gradient(var(--face-lite) 0% 25%, var(--face) 0% 50%);
+    background-size: 2px 2px; /* checkerboard = "pressed in" toggle */
+  }
+  button:disabled { color: var(--disabled); }
+  input[type=file] { display: none; }
+
+  /* Waveform: sunken client area */
+  .waveform-wrap {
+    position: relative; flex: 1; margin: 0 8px; background: var(--wave-bg);
+    overflow: hidden; border-radius: var(--radius);
+    border: 1px solid; border-color: var(--sunken-border);
+    box-shadow: var(--sunken-shadow);
+  }
+  #ruler { position: absolute; top: 0; left: 0; width: 100%; height: 22px; }
+  #waveCanvas { position: absolute; left: 0; width: 100%; top: 22px; touch-action: none; }
+  .waveform-wrap.no-file:after {
+    content: "Load an audio file to begin"; position: absolute; top: 50%; left: 50%;
+    transform: translate(-50%,-50%); color: var(--muted); font-size: var(--font-size);
+  }
+
+  /* Fixed needle: stays put at center while the waveform scrolls beneath it */
+  .needle {
+    --needle-color: var(--needle-idle);
+    display: none;
+    position: absolute; top: 0; bottom: 0; left: 50%; width: 1px;
+    background: var(--needle-color); pointer-events: none; z-index: 5;
+  }
+  .waveform-wrap:not(.no-file) .needle { display: block; }
+  .needle::before {
+    content: ''; position: absolute; top: 0; left: -4px;
+    border-left: 4px solid transparent; border-right: 4px solid transparent;
+    border-top: 7px solid var(--needle-color);
+  }
+
+  .status-badge {
+    position: absolute; top: 26px; right: 4px; padding: 1px 6px;
+    font-size: var(--font-size); background: var(--face); color: var(--text);
+    border: 1px solid; border-color: var(--btn-border); border-radius: var(--radius);
+    pointer-events: none;
+  }
+  .status-badge.playing { color: var(--needle-fwd); font-weight: bold; }
+  .status-badge.scratching { color: var(--needle-rev); font-weight: bold; }
+  .status-badge.paused { color: var(--muted); }
+
+  /* Group boxes with etched borders + legends, like a real properties dialog */
+  .transport {
+    padding: 8px; display: flex; align-items: flex-start; gap: 8px; flex-wrap: wrap;
+  }
+  .transport .group {
+    display: flex; align-items: center; gap: 4px;
+    border: var(--group-border); border-radius: var(--radius);
+    box-shadow: var(--group-shadow);
+    padding: 8px 7px 6px; position: relative;
+  }
+  .transport .group > .legend {
+    position: absolute; top: -6px; left: 6px; padding: 0 3px;
+    background: var(--face); color: var(--muted); font-size: var(--font-size);
+  }
+  .time {
+    font-family: "Courier New", monospace; font-size: 12px;
+    padding: 2px 5px; background: var(--field); border-radius: var(--radius);
+    border: 1px solid; border-color: var(--sunken-border);
+    box-shadow: var(--sunken-shadow);
+    min-width: 145px; text-align: center;
+  }
+
+  label.small { font-size: var(--font-size); color: var(--text); display: flex; align-items: center; gap: 4px; }
+
+  /* Trackbar-style sliders */
+  input[type=range] {
+    -webkit-appearance: none; appearance: none;
+    background: transparent; height: 20px; margin: 0;
+  }
+  input[type=range]::-webkit-slider-runnable-track {
+    height: 4px; background: var(--face); border-radius: var(--radius);
+    border: 1px solid; border-color: var(--sunken-border);
+    box-shadow: var(--sunken-shadow);
+  }
+  input[type=range]::-webkit-slider-thumb {
+    -webkit-appearance: none; appearance: none;
+    width: 11px; height: 18px; margin-top: -8px; background: var(--face);
+    border-radius: var(--radius);
+    border: 1px solid; border-color: var(--btn-border);
+    box-shadow: var(--btn-shadow);
+  }
+  input[type=range]::-moz-range-track {
+    height: 4px; background: var(--face);
+    border: 1px solid; border-color: var(--sunken-border);
+  }
+  input[type=range]::-moz-range-thumb {
+    width: 9px; height: 16px; border-radius: var(--radius); background: var(--face);
+    border: 1px solid; border-color: var(--btn-border);
+  }
+
+  /* Status bar with sunken panels */
+  footer {
+    display: flex; align-items: center; gap: 3px;
+    padding: 2px 3px 3px; margin-top: 2px; color: var(--muted); font-size: var(--font-size);
+  }
+  footer .panel {
+    padding: 2px 5px; border-radius: var(--radius);
+    border: 1px solid; border-color: var(--sunken-border);
+  }
+  footer .panel.grow { flex: 1; }
+  footer kbd {
+    font-family: inherit; font-weight: bold; padding: 0 2px;
+  }
+</style>
+</head>
+<body>
+<div id="app">
+  <div class="titlebar">
+    <span class="title">Scratch Deck</span>
+    <span class="tbtn">_</span>
+    <span class="tbtn">□</span>
+    <span class="tbtn close">×</span>
+  </div>
+  <div class="menubar">
+    <span><u>F</u>ile</span>
+    <span><u>E</u>dit</span>
+    <span><u>V</u>iew</span>
+    <span><u>H</u>elp</span>
+  </div>
+  <header>
+    <button id="loadBtn">Open File...</button>
+    <input type="file" id="fileInput" accept="audio/*">
+    <span class="filename" id="filename">No file loaded</span>
+    <label class="small">Theme:
+      <select id="themeSelect">
+        <option value="win2k">Windows 2000</option>
+        <option value="win2k-night">Windows 2000 (Night)</option>
+        <option value="dark">Midnight Blue</option>
+      </select>
+    </label>
+  </header>
+
+  <div class="waveform-wrap no-file" id="waveWrap">
+    <canvas id="ruler"></canvas>
+    <canvas id="waveCanvas"></canvas>
+    <div class="needle" id="needle"></div>
+    <div class="status-badge paused" id="statusBadge">Paused</div>
+  </div>
+
+  <div class="transport">
+    <div class="group">
+      <span class="legend">Transport</span>
+      <button id="playBtn" disabled>▶ Play</button>
+      <button id="stopBtn" disabled>■ Stop</button>
+      <span class="time" id="timeDisplay"><b>0:00.00</b> / 0:00.00</span>
+    </div>
+    <div class="group">
+      <span class="legend">Loop</span>
+      <button id="loopStartBtn" disabled>Set Start</button>
+      <button id="loopEndBtn" disabled>Set End</button>
+      <button id="loopToggleBtn" class="toggle" disabled>Loop: Off</button>
+      <button id="loopClearBtn" disabled>Clear</button>
+    </div>
+    <div class="group">
+      <span class="legend">Zoom</span>
+      <button id="zoomOutBtn" disabled>−</button>
+      <button id="zoomFitBtn" disabled>Fit</button>
+      <button id="zoomInBtn" disabled>+</button>
+    </div>
+    <div class="group">
+      <span class="legend">Speed</span>
+      <input type="range" id="speedSlider" min="0.25" max="2" step="0.01" value="1" disabled style="width:110px">
+      <span id="speedVal">1.00x</span>
+    </div>
+    <div class="group">
+      <span class="legend">Volume</span>
+      <input type="range" id="volSlider" min="0" max="1" step="0.01" value="0.9" style="width:80px">
+    </div>
+  </div>
+
+  <footer>
+    <span class="panel grow">
+      <kbd>Space</kbd> play/pause &nbsp; <kbd>[</kbd> loop start &nbsp; <kbd>]</kbd> loop end &nbsp;
+      <kbd>L</kbd> toggle loop &nbsp; <kbd>Drag</kbd> play fwd/reverse &nbsp;
+      <kbd>Shift+drag</kbd> pan &nbsp; <kbd>Wheel/pinch</kbd> zoom
+    </span>
+    <span class="panel">Ready</span>
+  </footer>
+</div>
+
+<script>
+(() => {
+  "use strict";
+
+  // ---------- DOM ----------
+  const fileInput = document.getElementById('fileInput');
+  const loadBtn = document.getElementById('loadBtn');
+  const filenameEl = document.getElementById('filename');
+  const waveWrap = document.getElementById('waveWrap');
+  const rulerCanvas = document.getElementById('ruler');
+  const waveCanvas = document.getElementById('waveCanvas');
+  const needleEl = document.getElementById('needle');
+  const statusBadge = document.getElementById('statusBadge');
+  const playBtn = document.getElementById('playBtn');
+  const stopBtn = document.getElementById('stopBtn');
+  const timeDisplay = document.getElementById('timeDisplay');
+  const loopStartBtn = document.getElementById('loopStartBtn');
+  const loopEndBtn = document.getElementById('loopEndBtn');
+  const loopToggleBtn = document.getElementById('loopToggleBtn');
+  const loopClearBtn = document.getElementById('loopClearBtn');
+  const zoomOutBtn = document.getElementById('zoomOutBtn');
+  const zoomInBtn = document.getElementById('zoomInBtn');
+  const zoomFitBtn = document.getElementById('zoomFitBtn');
+  const speedSlider = document.getElementById('speedSlider');
+  const speedVal = document.getElementById('speedVal');
+  const volSlider = document.getElementById('volSlider');
+  const themeSelect = document.getElementById('themeSelect');
+
+  // ---------- Theme ----------
+  // Canvas colors are defined in CSS alongside the rest of each theme, then read back
+  // here, so adding a theme never means editing two palettes that can drift apart.
+  let C = {};
+  function refreshThemeColors() {
+    const cs = getComputedStyle(document.documentElement);
+    const get = (n) => cs.getPropertyValue(n).trim();
+    C = {
+      waveBg: get('--wave-bg'),
+      waveInk: get('--wave-ink'),
+      waveCenter: get('--wave-center'),
+      rulerBg: get('--ruler-bg'),
+      rulerInk: get('--ruler-ink'),
+      rulerTick: get('--ruler-tick'),
+      loopFill: get('--loop-fill'),
+      loopEdge: get('--loop-edge'),
+      needleIdle: get('--needle-idle'),
+      needleFwd: get('--needle-fwd'),
+      needleRev: get('--needle-rev'),
+      font: get('--font')
+    };
+  }
+  function applyTheme(name) {
+    document.documentElement.setAttribute('data-theme', name);
+    themeSelect.value = name;
+    try { localStorage.setItem('scratchdeck-theme', name); } catch (e) {}
+    refreshThemeColors();
+    updateNeedleColor();
+    if (duration) drawWave();
+  }
+  themeSelect.addEventListener('change', () => applyTheme(themeSelect.value));
+
+  // ---------- State ----------
+  let audioCtx = null;
+  let workletNode = null;
+  let gainNode = null;
+  let sampleRate = 44100;
+  let totalSamples = 0;
+  let duration = 0;
+  let channelPeaks = null; // Float32Array [min,max] pairs at fine resolution, per-channel merged (mono display)
+  const PEAK_RES = 20000; // number of min/max buckets across whole file
+
+  let viewStart = 0;      // seconds, left edge of visible window
+  let viewDuration = 0;   // seconds, width of visible window
+  let playheadSec = 0;
+  let isPlaying = false;
+  let isScrubbing = false;   // true while actively dragging the waveform to play fwd/rev
+  let scrubDirection = 1;    // +1 forward, -1 reverse (last direction while scrubbing)
+  let loopStart = null, loopEnd = null, loopEnabled = false;
+
+  let dragging = false;
+  let dragMode = null; // 'scrub' | 'pan'
+  let dragStartX = 0;
+  let dragStartView = 0;
+  let lastMoveX = 0;
+  let lastMoveTime = 0;
+  let scrubTargetSec = 0; // finger-derived target, tracked independently of the engine's position
+  // Velocity is measured across a ~70ms window rather than between consecutive events:
+  // a two-sample difference is dominated by event-timing jitter, and that jitter lands
+  // directly on pitch. A windowed finite difference is far steadier.
+  const VEL_WINDOW_MS = 70;
+  let scrubHistory = []; // [{t, sec}] recent finger positions
+  let scrubEngaged = false; // becomes true once a drag has moved past the deadzone
+  const SCRUB_DEADZONE_PX = 3;
+  let suppressAutoCenter = false; // true only while shift-panning, so the peek isn't instantly overridden
+
+  // ---------- Canvas sizing ----------
+  function resizeCanvases() {
+    const rect = waveWrap.getBoundingClientRect();
+    const dpr = window.devicePixelRatio || 1;
+    const h = rect.height - 22;
+    [rulerCanvas].forEach(c => {
+      c.width = rect.width * dpr; c.height = 22 * dpr;
+      c.style.height = '22px';
+    });
+    waveCanvas.width = rect.width * dpr; waveCanvas.height = h * dpr;
+    waveCanvas.style.height = h + 'px';
+    drawWave();
+  }
+  window.addEventListener('resize', resizeCanvases);
+
+  // ---------- Load file ----------
+  loadBtn.addEventListener('click', () => fileInput.click());
+  fileInput.addEventListener('change', async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    await loadFile(file);
+  });
+  waveWrap.addEventListener('dragover', e => e.preventDefault());
+  waveWrap.addEventListener('drop', async e => {
+    e.preventDefault();
+    const file = e.dataTransfer.files[0];
+    if (file) await loadFile(file);
+  });
+
+  let audioInitPromise = null;
+
+  async function ensureAudioInit() {
+    if (workletNode) return;
+    if (!audioInitPromise) audioInitPromise = initAudio();
+    try {
+      await audioInitPromise;
+    } catch (err) {
+      audioInitPromise = null;
+      audioCtx = null;
+      workletNode = null;
+      throw err;
+    }
+  }
+
+  async function loadFile(file) {
+    filenameEl.textContent = 'Initializing audio engine...';
+    try {
+      await ensureAudioInit();
+    } catch (err) {
+      filenameEl.textContent = 'Audio engine failed to start (see console). If you opened this file directly, try running it via a local server instead.';
+      console.error('AudioWorklet init failed:', err);
+      return;
+    }
+    filenameEl.textContent = 'Decoding ' + file.name + ' ...';
+    const arrayBuf = await file.arrayBuffer();
+    let audioBuffer;
+    try {
+      audioBuffer = await audioCtx.decodeAudioData(arrayBuf);
+    } catch (err) {
+      filenameEl.textContent = 'Failed to decode: ' + file.name;
+      console.error(err);
+      return;
+    }
+    filenameEl.textContent = file.name;
+    await loadIntoEngine(audioBuffer);
+  }
+
+  // ---------- Audio engine (AudioWorklet) ----------
+  const WORKLET_SRC = `
+// Hold: a stopped record is silent (DC), but we want the sound to sustain — "baaaaack".
+// So when the drag stops we loop a slice of audio at its NATURAL 1.0x rate: no time-stretch,
+// no pitch shift, no granular smearing. The only seam is the loop wrap, hidden by an
+// equal-power crossfade against the audio just before the loop start.
+const HOLD_LEN = Math.round(sampleRate * 0.28);    // ~280ms of real audio, looped
+const HOLD_XFADE = Math.round(sampleRate * 0.035); // ~35ms equal-power crossfade at the wrap
+const HOLD_ENTER = 0.03; // |rate| below this: start holding
+const HOLD_EXIT  = 0.12; // |rate| above this: release (hysteresis stops mode-flutter)
+// Position-error correction gain: a ~250ms time constant. Slow enough that the resulting
+// pitch trim is inaudible, which is the point — fast correction is what rings and warbles.
+const CORRECT_GAIN = 1 / (0.25 * sampleRate);
+class ScratchProcessor extends AudioWorkletProcessor {
+  constructor() {
+    super();
+    this.holding = false;
+    this.holdStart = 0;
+    this.holdPhase = 0;
+    this.channels = [];
+    this.length = 0;
+    this.position = 0;
+    this.playing = false;
+    this.scrubbing = false;
+    this.scrubRate = 0;   // velocity feedforward + slow drift trim
+    this.targetVel = 0;   // measured drag velocity; this alone sets pitch
+    this.virtualPos = 0;  // continuously-advancing estimate of the finger's position
+    this.hasScrubTarget = false;
+    this.loopEnabled = false;
+    this.loopStart = 0;
+    this.loopEnd = 0;
+    this.rate = 1;
+    this.gain = 0.9;
+    this.reportCounter = 0;
+    this.port.onmessage = (e) => this.handleMessage(e.data);
+  }
+  handleMessage(msg) {
+    switch (msg.type) {
+      case 'load':
+        this.channels = msg.channels;
+        this.length = msg.length;
+        this.position = 0;
+        this.playing = false;
+        this.scrubbing = false;
+        break;
+      case 'play':
+        this.scrubbing = false;
+        this.playing = true;
+        break;
+      case 'pause':
+        this.scrubbing = false;
+        this.playing = false;
+        break;
+      case 'stop':
+        this.scrubbing = false;
+        this.playing = false;
+        this.position = 0;
+        break;
+      case 'seek':
+        this.scrubbing = false;
+        this.position = clamp(msg.position, 0, this.length);
+        break;
+      case 'scrubStart':
+        this.playing = false;
+        this.scrubbing = true;
+        this.scrubRate = 0;
+        this.targetVel = 0;
+        this.virtualPos = this.position;
+        this.holding = false;
+        break;
+      case 'scrubTarget':
+        // Pitch comes from the measured velocity, NOT from position error. Driving rate off
+        // error inside a loop that also lags creates an underdamped oscillation — a periodic
+        // pitch modulation heard as warble on top of the audio.
+        this.virtualPos = clamp(msg.position, 0, this.length);
+        this.targetVel = clamp(msg.velocity, -16, 16);
+        this.hasScrubTarget = true;
+        break;
+      case 'scrubEnd':
+        this.scrubbing = false;
+        this.holding = false;
+        break;
+      case 'setLoop':
+        this.loopStart = msg.loopStart;
+        this.loopEnd = msg.loopEnd;
+        this.loopEnabled = msg.loopEnabled;
+        break;
+      case 'setLoopEnabled':
+        this.loopEnabled = msg.value;
+        break;
+      case 'setRate':
+        this.rate = msg.value;
+        break;
+      case 'setGain':
+        this.gain = msg.value;
+        break;
+    }
+  }
+  readSample(ch, pos) {
+    const data = this.channels[Math.min(ch, this.channels.length - 1)];
+    if (!data || this.length === 0) return 0;
+    if (pos <= 1) return data[0] || 0;
+    if (pos >= this.length - 2) return data[this.length - 1] || 0;
+    // 4-point Catmull-Rom. Linear interpolation between two samples acts as a low-pass
+    // whose strength varies with the fractional offset, which dulls highs and adds a
+    // flange-like coloration as the position drifts. Cubic keeps the top end intact.
+    const i = Math.floor(pos);
+    const f = pos - i;
+    const xm1 = data[i - 1], x0 = data[i], x1 = data[i + 1], x2 = data[i + 2];
+    const c = (x1 - xm1) * 0.5;
+    const v = x0 - x1;
+    const w = c + v;
+    const a = w + v + (x2 - x0) * 0.5;
+    const b = w + a;
+    return ((a * f - b) * f + c) * f + x0;
+  }
+  process(inputs, outputs) {
+    const output = outputs[0];
+    const frames = output[0] ? output[0].length : 128;
+    const nOut = output.length;
+    for (let i = 0; i < frames; i++) {
+      if (this.scrubbing && this.length > 0) {
+        // The virtual finger advances continuously between pointer updates, so the position
+        // error stays near zero instead of sawtoothing once per event — that sawtooth, fed
+        // through a correction term, is what modulated the pitch.
+        this.virtualPos = clamp(this.virtualPos + this.targetVel, 0, this.length);
+        // Rate = measured velocity (sets pitch, smooth) + a slow trim for accumulated drift.
+        this.scrubRate = this.targetVel + (this.virtualPos - this.position) * CORRECT_GAIN;
+        // Hold decisions key off the commanded velocity, not the trimmed rate, so the
+        // correction term can never flutter the mode back and forth.
+        const speed = this.targetVel < 0 ? -this.targetVel : this.targetVel;
+        if (!this.holding && speed < HOLD_ENTER) {
+          this.holding = true;
+          this.holdStart = this.position;
+          this.holdPhase = 0;
+        } else if (this.holding && speed > HOLD_EXIT) {
+          this.holding = false;
+        }
+        if (this.holding) {
+          // position stays put (the needle holds); only the loop read head advances.
+          // Keep the virtual finger pinned too, so releasing the hold starts from zero error.
+          this.virtualPos = this.position;
+          this.holdPhase += 1;
+          if (this.holdPhase >= HOLD_LEN) this.holdPhase -= HOLD_LEN;
+        } else {
+          this.position += this.scrubRate;
+          this.position = clamp(this.position, 0, this.length);
+        }
+      } else if (this.playing && this.length > 0) {
+        this.position += this.rate;
+        if (this.loopEnabled && this.loopEnd > this.loopStart) {
+          if (this.position >= this.loopEnd) {
+            this.position = this.loopStart + (this.position - this.loopEnd);
+          } else if (this.position < this.loopStart) {
+            this.position = this.loopEnd - (this.loopStart - this.position);
+          }
+        } else if (this.position >= this.length) {
+          this.position = this.length;
+          this.playing = false;
+        } else if (this.position <= 0) {
+          this.position = 0;
+          this.playing = false;
+        }
+      }
+      // Held: read the loop at natural rate. Only one read is active at a time (except inside
+      // the short wrap crossfade), so there is no comb filtering — that simultaneous two-read
+      // mixing was the source of the hollow/phasey artifact.
+      let xfade = 0, tailPos = 0, headPos = 0;
+      const held = this.holding && this.scrubbing && this.length > 0;
+      if (held) {
+        tailPos = this.holdStart + this.holdPhase;
+        if (this.holdPhase > HOLD_LEN - HOLD_XFADE) {
+          xfade = (this.holdPhase - (HOLD_LEN - HOLD_XFADE)) / HOLD_XFADE; // 0 -> 1
+          headPos = this.holdStart + (this.holdPhase - HOLD_LEN);          // pre-roll before loop start
+        }
+      }
+
+      for (let ch = 0; ch < nOut; ch++) {
+        let s;
+        if (held) {
+          s = this.readSample(ch, tailPos);
+          if (xfade > 0) {
+            // equal-power crossfade keeps perceived loudness constant through the wrap
+            const a = Math.cos(xfade * Math.PI / 2);
+            const b = Math.sin(xfade * Math.PI / 2);
+            s = s * a + this.readSample(ch, headPos) * b;
+          }
+        } else {
+          s = this.readSample(ch, this.position);
+        }
+        output[ch][i] = s * this.gain;
+      }
+    }
+    this.reportCounter++;
+    if (this.reportCounter >= 4) {
+      this.reportCounter = 0;
+      this.port.postMessage({ type: 'pos', position: this.position, playing: this.playing, scrubbing: this.scrubbing });
+    }
+    return true;
+  }
+}
+function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
+registerProcessor('scratch-processor', ScratchProcessor);
+`;
+
+  async function initAudio() {
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    const blob = new Blob([WORKLET_SRC], { type: 'application/javascript' });
+    const url = URL.createObjectURL(blob);
+    const timeout = new Promise((_, reject) =>
+      setTimeout(() => reject(new Error('audioWorklet.addModule timed out after 8s — this browser/origin likely blocks worklet module loading (common with file:// pages). Try serving the page over http://localhost instead.')), 8000)
+    );
+    await Promise.race([audioCtx.audioWorklet.addModule(url), timeout]);
+    workletNode = new AudioWorkletNode(audioCtx, 'scratch-processor', {
+      outputChannelCount: [2]
+    });
+    gainNode = audioCtx.createGain();
+    gainNode.gain.value = parseFloat(volSlider.value);
+    workletNode.connect(gainNode).connect(audioCtx.destination);
+    workletNode.port.onmessage = (e) => {
+      if (e.data.type === 'pos') {
+        // The engine's position is authoritative even mid-scrub: it now moves continuously
+        // (velocity-following, drift-corrected) rather than jumping and holding, so the
+        // waveform stays locked to what you actually hear instead of fighting it.
+        playheadSec = e.data.position / sampleRate;
+        isPlaying = e.data.playing;
+        updateStatusBadge();
+        updateTimeDisplay();
+      }
+    };
+  }
+
+  async function loadIntoEngine(audioBuffer) {
+    if (audioCtx.state === 'suspended') await audioCtx.resume();
+    sampleRate = audioBuffer.sampleRate;
+    totalSamples = audioBuffer.length;
+    duration = audioBuffer.duration;
+    const nCh = Math.min(audioBuffer.numberOfChannels, 2);
+    const channels = [];
+    for (let c = 0; c < nCh; c++) {
+      channels.push(audioBuffer.getChannelData(c).slice());
+    }
+    computePeaks(channels, totalSamples);
+    workletNode.port.postMessage({ type: 'load', channels, length: totalSamples }, channels.map(c => c.buffer));
+
+    loopStart = null; loopEnd = null; loopEnabled = false;
+    updateLoopUI();
+    playheadSec = 0;
+    viewStart = 0;
+    viewDuration = duration;
+    isPlaying = false; isScrubbing = false;
+
+    waveWrap.classList.remove('no-file');
+    [playBtn, stopBtn, loopStartBtn, loopEndBtn, loopToggleBtn, loopClearBtn,
+     zoomOutBtn, zoomInBtn, zoomFitBtn, speedSlider].forEach(b => b.disabled = false);
+
+    resizeCanvases();
+    updateTimeDisplay();
+    updateStatusBadge();
+  }
+
+  function computePeaks(channels, length) {
+    // merge channels to mono peak envelope: [min0,max0,min1,max1,...]
+    const buckets = Math.min(PEAK_RES, length || 1);
+    const peaks = new Float32Array(buckets * 2);
+    const samplesPerBucket = length / buckets;
+    const nCh = channels.length;
+    for (let b = 0; b < buckets; b++) {
+      const start = Math.floor(b * samplesPerBucket);
+      const end = Math.min(length, Math.floor((b + 1) * samplesPerBucket) || start + 1);
+      let mn = 1, mx = -1;
+      for (let i = start; i < end; i++) {
+        for (let c = 0; c < nCh; c++) {
+          const v = channels[c][i];
+          if (v < mn) mn = v;
+          if (v > mx) mx = v;
+        }
+      }
+      if (end <= start) { mn = 0; mx = 0; }
+      peaks[b * 2] = mn;
+      peaks[b * 2 + 1] = mx;
+    }
+    channelPeaks = { data: peaks, buckets, samplesPerBucket, length };
+  }
+
+  // ---------- Drawing ----------
+  function drawRuler() {
+    const dpr = window.devicePixelRatio || 1;
+    const ctx = rulerCanvas.getContext('2d');
+    const w = rulerCanvas.width, h = rulerCanvas.height;
+    ctx.setTransform(1,0,0,1,0,0);
+    ctx.clearRect(0,0,w,h);
+    ctx.fillStyle = C.rulerBg;
+    ctx.fillRect(0,0,w,h);
+    if (!duration) return;
+    ctx.font = (10*dpr) + 'px ' + C.font;
+    ctx.fillStyle = C.rulerInk;
+    ctx.strokeStyle = C.rulerTick;
+    const pxPerSec = (w) / viewDuration;
+    // pick a nice tick interval
+    const targetPx = 80 * dpr;
+    const rawInterval = targetPx / pxPerSec;
+    const niceSteps = [0.1,0.2,0.5,1,2,5,10,15,30,60,120,300,600];
+    let interval = niceSteps[niceSteps.length-1];
+    for (const s of niceSteps) { if (s >= rawInterval) { interval = s; break; } }
+    const firstTick = Math.floor(viewStart / interval) * interval;
+    for (let t = firstTick; t <= viewStart + viewDuration; t += interval) {
+      const x = (t - viewStart) * pxPerSec;
+      ctx.beginPath(); ctx.moveTo(x, h*0.4); ctx.lineTo(x, h); ctx.stroke();
+      ctx.fillText(formatTime(t, interval < 1), x + 3*dpr, h*0.75);
+    }
+  }
+
+  function drawWave() {
+    const dpr = window.devicePixelRatio || 1;
+    const ctx = waveCanvas.getContext('2d');
+    const w = waveCanvas.width, h = waveCanvas.height;
+    ctx.setTransform(1,0,0,1,0,0);
+    ctx.clearRect(0,0,w,h);
+    ctx.fillStyle = C.waveBg;
+    ctx.fillRect(0,0,w,h);
+    drawRuler();
+    if (!channelPeaks || !duration) return;
+    const mid = h/2;
+    ctx.strokeStyle = C.waveCenter;
+    ctx.beginPath(); ctx.moveTo(0, mid); ctx.lineTo(w, mid); ctx.stroke();
+
+    // loop region shading + markers (start marker shows immediately, before the end marker is set)
+    if (loopStart !== null || loopEnd !== null) {
+      const pxPerSec = w / viewDuration;
+      if (loopStart !== null && loopEnd !== null) {
+        const x0 = (loopStart - viewStart) * pxPerSec;
+        const x1 = (loopEnd - viewStart) * pxPerSec;
+        ctx.fillStyle = C.loopFill;
+        ctx.fillRect(Math.max(0,x0), 0, Math.min(w,x1)-Math.max(0,x0), h);
+      }
+      ctx.strokeStyle = C.loopEdge;
+      ctx.fillStyle = C.loopEdge;
+      ctx.lineWidth = 2*dpr;
+      [loopStart, loopEnd].forEach(t => {
+        if (t === null) return;
+        const x = (t - viewStart) * pxPerSec;
+        if (x < -10*dpr || x > w+10*dpr) return;
+        ctx.beginPath(); ctx.moveTo(x,0); ctx.lineTo(x,h); ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(x, 0); ctx.lineTo(x + 9*dpr, 5*dpr); ctx.lineTo(x, 10*dpr);
+        ctx.closePath(); ctx.fill();
+      });
+    }
+
+    const { data, buckets, samplesPerBucket, length } = channelPeaks;
+
+    // Per-pixel, time-bounded: the view can now extend before 0 or past duration (so the
+    // needle can stay centered near the start/end of the track), so each pixel is mapped to
+    // its own time range and simply left blank wherever that range falls outside the track.
+    ctx.fillStyle = C.waveInk;
+    for (let px = 0; px < w; px++) {
+      const t0 = viewStart + (px / w) * viewDuration;
+      const t1 = viewStart + ((px + 1) / w) * viewDuration;
+      const s0 = t0 * sampleRate, s1 = t1 * sampleRate;
+      if (s1 <= 0 || s0 >= length) continue; // outside the track entirely: leave blank
+      const cs0 = Math.max(0, s0), cs1 = Math.min(length, s1);
+      const b0 = Math.max(0, Math.min(buckets - 1, Math.floor(cs0 / samplesPerBucket)));
+      const b1 = Math.max(0, Math.min(buckets - 1, Math.floor(cs1 / samplesPerBucket)));
+      let mn = 1, mx = -1;
+      for (let b = b0; b <= b1; b++) {
+        if (data[b*2] < mn) mn = data[b*2];
+        if (data[b*2+1] > mx) mx = data[b*2+1];
+      }
+      if (mn > mx) { mn = 0; mx = 0; }
+      const y0 = mid - mx*mid*0.95;
+      const y1 = mid - mn*mid*0.95;
+      ctx.fillRect(px, y0, 1, Math.max(1, y1-y0));
+    }
+  }
+
+  function updateNeedleColor() {
+    const color = isScrubbing ? (scrubDirection < 0 ? C.needleRev : C.needleFwd) : C.needleIdle;
+    needleEl.style.setProperty('--needle-color', color);
+  }
+
+  function formatTime(t, showMs) {
+    if (t < 0) t = 0;
+    const m = Math.floor(t/60);
+    const s = t - m*60;
+    return showMs ? `${m}:${s.toFixed(2).padStart(5,'0')}` : `${m}:${Math.floor(s).toString().padStart(2,'0')}`;
+  }
+
+  function updateTimeDisplay() {
+    timeDisplay.innerHTML = `<b>${formatTime(playheadSec,true)}</b> / ${formatTime(duration,true)}`;
+  }
+
+  function updateStatusBadge() {
+    statusBadge.classList.remove('playing','scratching','paused');
+    if (isScrubbing) {
+      statusBadge.textContent = scrubDirection < 0 ? '◀ Reverse' : 'Forward ▶';
+      statusBadge.classList.add('scratching');
+    }
+    else if (isPlaying) { statusBadge.textContent = 'Playing'; statusBadge.classList.add('playing'); }
+    else { statusBadge.textContent = 'Paused'; statusBadge.classList.add('paused'); }
+    playBtn.textContent = isPlaying ? '⏸ Pause' : '▶ Play';
+  }
+
+  function updateLoopUI() {
+    loopToggleBtn.textContent = 'Loop: ' + (loopEnabled ? 'On' : 'Off');
+    loopToggleBtn.classList.toggle('on', loopEnabled);
+  }
+
+  // ---------- Animation loop: keep the playhead pinned under the fixed needle ----------
+  function centerViewOnPlayhead() {
+    // Deliberately unclamped: the needle is fixed at center, so near the start/end of the
+    // track the view must be allowed to show blank space rather than force-showing the wrong
+    // time under the needle (which is what clamping to [0, duration] used to do).
+    viewStart = playheadSec - viewDuration / 2;
+  }
+  function tick() {
+    if (duration) {
+      // A held-still finger fires no pointermove events, so without this the read head would
+      // coast on its last velocity forever. Decay to a stop, like holding a record still.
+      if (isScrubbing && performance.now() - lastMoveTime > 40) {
+        // A held-still finger fires no pointermove events. Feeding the unchanged position
+        // into the same velocity window lets the measured velocity fall to zero on its own,
+        // so the read head eases to a stop and the hold loop takes over.
+        sendScrubTarget(performance.now(), scrubTargetSec);
+      }
+      if (!suppressAutoCenter) centerViewOnPlayhead();
+      drawWave();
+    }
+    requestAnimationFrame(tick);
+  }
+  requestAnimationFrame(tick);
+
+  // ---------- Transport controls ----------
+  playBtn.addEventListener('click', togglePlay);
+  function togglePlay() {
+    if (!workletNode) return;
+    if (isPlaying) {
+      workletNode.port.postMessage({ type: 'pause' });
+      isPlaying = false;
+    } else {
+      if (audioCtx.state === 'suspended') audioCtx.resume();
+      workletNode.port.postMessage({ type: 'play' });
+      isPlaying = true;
+    }
+    updateStatusBadge();
+  }
+
+  stopBtn.addEventListener('click', () => {
+    workletNode.port.postMessage({ type: 'stop' });
+    playheadSec = 0; isPlaying = false; isScrubbing = false;
+    updateStatusBadge(); updateTimeDisplay();
+  });
+
+  loopStartBtn.addEventListener('click', () => {
+    loopStart = playheadSec;
+    if (loopEnd !== null && loopEnd <= loopStart) loopEnd = null;
+    syncLoop(); drawWave();
+  });
+  loopEndBtn.addEventListener('click', () => {
+    loopEnd = playheadSec;
+    if (loopStart !== null && loopEnd <= loopStart) { const t = loopStart; loopStart = loopEnd; loopEnd = t; }
+    syncLoop(); drawWave();
+  });
+  loopClearBtn.addEventListener('click', () => {
+    loopStart = null; loopEnd = null; loopEnabled = false;
+    updateLoopUI(); syncLoop(); drawWave();
+  });
+  loopToggleBtn.addEventListener('click', () => {
+    if (loopStart === null || loopEnd === null) return;
+    loopEnabled = !loopEnabled;
+    updateLoopUI(); syncLoop();
+  });
+  function syncLoop() {
+    workletNode.port.postMessage({
+      type: 'setLoop',
+      loopStart: (loopStart||0) * sampleRate,
+      loopEnd: (loopEnd||0) * sampleRate,
+      loopEnabled: loopEnabled && loopStart !== null && loopEnd !== null
+    });
+  }
+
+  zoomInBtn.addEventListener('click', () => zoom(0.6));
+  zoomOutBtn.addEventListener('click', () => zoom(1/0.6));
+  zoomFitBtn.addEventListener('click', () => { viewStart = 0; viewDuration = duration; drawWave(); });
+  function zoom(factor, centerSec) {
+    if (!duration) return;
+    const center = centerSec !== undefined ? centerSec : viewStart + viewDuration/2;
+    let nd = Math.max(0.2, Math.min(duration, viewDuration * factor));
+    let ns = center - (center - viewStart) * (nd/viewDuration);
+    ns = Math.max(0, Math.min(duration - nd, ns));
+    viewStart = ns; viewDuration = nd;
+    drawWave();
+  }
+
+  speedSlider.addEventListener('input', () => {
+    const v = parseFloat(speedSlider.value);
+    speedVal.textContent = v.toFixed(2) + 'x';
+    if (workletNode) workletNode.port.postMessage({ type: 'setRate', value: v });
+  });
+  volSlider.addEventListener('input', () => {
+    if (gainNode) gainNode.gain.value = parseFloat(volSlider.value);
+  });
+
+  // ---------- Waveform interaction: drag=1:1 scrub fwd/reverse from wherever playback is, shift+drag=pan, wheel/pinch=zoom ----------
+  // The needle is fixed at center; the waveform scrolls under it. Dragging the waveform
+  // right pulls earlier audio under the needle (reverse), dragging left advances it (forward) —
+  // same convention as pulling a record toward you to scratch backward.
+
+  function sendScrubTarget(now, sec) {
+    scrubHistory.push({ t: now, sec });
+    while (scrubHistory.length > 2 && now - scrubHistory[0].t > VEL_WINDOW_MS) scrubHistory.shift();
+    const oldest = scrubHistory[0];
+    const spanMs = now - oldest.t;
+    // dimensionless playback rate (1 = normal speed), measured over the window
+    const velocity = spanMs >= 8 ? (sec - oldest.sec) / (spanMs / 1000) : 0;
+    workletNode.port.postMessage({
+      type: 'scrubTarget',
+      position: sec * sampleRate,
+      velocity: Math.max(-16, Math.min(16, velocity))
+    });
+  }
+
+  // Pointer Events unify mouse, touch and pen in one code path. Pointer capture keeps
+  // move/up events targeted at the canvas even if the finger/cursor drifts off it,
+  // and touch-action:none (in CSS) stops the browser from treating drags/pinches as page
+  // scroll/zoom gestures — which also means we have to implement pinch-to-zoom ourselves,
+  // since disabling the native gesture disables it entirely, not just the page-scroll part.
+  const activePointers = new Map(); // pointerId -> {x, y}, tracks up to 2 fingers for pinch
+  let pinchStartDist = 0;
+  let pinchStartDuration = 0;
+
+  function pointerDistance() {
+    const pts = [...activePointers.values()];
+    if (pts.length < 2) return 0;
+    return Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
+  }
+
+  waveCanvas.addEventListener('pointerdown', (e) => {
+    if (!duration) return;
+    waveCanvas.setPointerCapture(e.pointerId);
+    activePointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+
+    if (activePointers.size === 2) {
+      // second finger down: cancel any single-finger drag and switch to pinch-zoom
+      dragging = false; dragMode = null; scrubEngaged = false; suppressAutoCenter = false;
+      pinchStartDist = pointerDistance();
+      pinchStartDuration = viewDuration;
+      e.preventDefault();
+      return;
+    }
+    if (activePointers.size > 2) { e.preventDefault(); return; }
+
+    dragStartX = e.clientX;
+    dragStartView = viewStart;
+    lastMoveX = e.clientX;
+    lastMoveTime = performance.now();
+    scrubEngaged = false;
+    if (e.shiftKey) {
+      dragMode = 'pan';
+      suppressAutoCenter = true;
+    } else {
+      // touching down does NOT move or pause anything — it just marks where you grabbed.
+      // Playback (if any) keeps going until real drag motion is detected past the deadzone,
+      // at which point it picks up scrubbing from wherever the position is at that instant.
+      dragMode = 'scrub';
+    }
+    dragging = true;
+    e.preventDefault();
+  });
+
+  waveCanvas.addEventListener('pointermove', (e) => {
+    if (activePointers.has(e.pointerId)) activePointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+
+    if (activePointers.size === 2) {
+      const dist = pointerDistance();
+      if (pinchStartDist > 0 && dist > 0) {
+        const factor = pinchStartDist / dist; // fingers spreading -> factor<1 -> zoom in
+        viewDuration = Math.max(0.2, Math.min(duration, pinchStartDuration * factor));
+        centerViewOnPlayhead();
+        drawWave();
+      }
+      e.preventDefault();
+      return;
+    }
+
+    if (!dragging || !duration) return;
+    if (dragMode === 'pan') {
+      const rect = waveCanvas.getBoundingClientRect();
+      const dxSec = (e.clientX - dragStartX) / rect.width * viewDuration;
+      viewStart = Math.max(0, Math.min(duration - viewDuration, dragStartView - dxSec));
+      drawWave();
+    } else if (dragMode === 'scrub') {
+      if (!scrubEngaged && Math.abs(e.clientX - dragStartX) <= SCRUB_DEADZONE_PX) return;
+      const rect = waveCanvas.getBoundingClientRect();
+      const secondsPerPixel = viewDuration / rect.width;
+      const now = performance.now();
+      if (!scrubEngaged) {
+        // the actual grab moment — hand the engine control from wherever playback naturally is
+        scrubTargetSec = playheadSec;
+        scrubHistory = [{ t: now, sec: scrubTargetSec }];
+        workletNode.port.postMessage({ type: 'scrubStart' });
+        scrubEngaged = true;
+        isScrubbing = true;
+        isPlaying = false;
+        updateStatusBadge();
+      }
+      const dxPixels = e.clientX - lastMoveX;
+      // dragging right (+dx) pulls earlier audio under the needle, so time moves backward
+      const deltaSec = -dxPixels * secondsPerPixel;
+      scrubTargetSec = Math.max(0, Math.min(duration, scrubTargetSec + deltaSec));
+      if (dxPixels !== 0) scrubDirection = dxPixels > 0 ? -1 : 1;
+      sendScrubTarget(now, scrubTargetSec);
+      updateStatusBadge();
+      lastMoveX = e.clientX;
+      lastMoveTime = now;
+    }
+    e.preventDefault();
+  });
+
+  function endDrag(e) {
+    if (e && activePointers.has(e.pointerId)) activePointers.delete(e.pointerId);
+    if (activePointers.size < 2) pinchStartDist = 0;
+    if (!dragging) return;
+    if (dragMode === 'scrub' && scrubEngaged) {
+      // release resumes normal forward playback from wherever the drag left off
+      workletNode.port.postMessage({ type: 'scrubEnd' });
+      workletNode.port.postMessage({ type: 'setRate', value: parseFloat(speedSlider.value) });
+      workletNode.port.postMessage({ type: 'play' });
+      isScrubbing = false;
+      isPlaying = true;
+      updateStatusBadge();
+    }
+    dragging = false; dragMode = null; scrubEngaged = false; suppressAutoCenter = false;
+  }
+  waveCanvas.addEventListener('pointerup', endDrag);
+  waveCanvas.addEventListener('pointercancel', endDrag);
+
+  waveCanvas.addEventListener('wheel', (e) => {
+    if (!duration) return;
+    e.preventDefault();
+    zoom(e.deltaY > 0 ? 1.15 : 1/1.15);
+  }, { passive: false });
+
+  // ---------- Keyboard shortcuts ----------
+  window.addEventListener('keydown', (e) => {
+    if (!duration) return;
+    if (e.code === 'Space') { e.preventDefault(); togglePlay(); }
+    else if (e.key === '[') { loopStartBtn.click(); }
+    else if (e.key === ']') { loopEndBtn.click(); }
+    else if (e.key.toLowerCase() === 'l') { loopToggleBtn.click(); }
+  });
+
+  // ---------- Startup ----------
+  let savedTheme = null;
+  try { savedTheme = localStorage.getItem('scratchdeck-theme'); } catch (e) {}
+  const validThemes = ['win2k', 'win2k-night', 'dark'];
+  applyTheme(validThemes.includes(savedTheme) ? savedTheme : 'win2k');
+
+})();
+</script>
+</body>
+</html>
