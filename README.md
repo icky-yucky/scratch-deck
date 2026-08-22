@@ -1,33 +1,44 @@
-# Scratch Deck v0.2
+# Scratch Deck
 
-Historical checkpoint. Browser build — run `serve.ps1` (PowerShell) then open
-`http://localhost:8000`. `AudioWorklet` requires a real origin, so this cannot be
-opened directly as a `file://` page.
+A waveform scrubbing deck: drag the waveform with a mouse or finger to play forward or
+backward at whatever speed you drag, with **pitch locked** — no chipmunk/slowdown warping,
+just tempo change, like DJ software "key lock." Hold still and the note sustains.
 
-## What changed since v0.1
+Packaged as a standalone Windows desktop app with Electron.
 
-- **Ground-up audio engine rewrite: WSOLA** (Waveform Similarity Overlap-Add). Pitch and
-  tempo are now fully decoupled — speed changes no longer bend pitch, unlike v0.1's
-  resampling engine. Verified: identical pitch at every drag speed including a full stop,
-  unity gain, no tremolo.
-- Loop export to WAV with a name prompt
-- Saved-loop library: Load / Rename / Delete, backed by `serve.ps1`'s file API
-- Whole-track Repeat toggle (an armed A/B loop still takes precedence)
-- Help → About dialog
+## Highlights
 
-## Carried over from v0.1
+- **WSOLA time-stretching audio engine** — pitch and tempo are fully decoupled. Verified:
+  identical pitch across every drag speed including a full stop, unity gain (no tremolo).
+- **1:1 pointer-driven scrubbing** — velocity measured over a smoothed window (not
+  consecutive-event deltas, which are dominated by event-timing jitter)
+- Fixed center needle; the waveform scrolls beneath it, like Serato/Traktor
+- A/B loop markers + whole-track repeat toggle
+- Loop export to WAV, with a save/rename/delete library
+- Three themes: Windows 2000, Windows 2000 (Night), and a flat dark-blue theme
+- Native file dialogs and a portable `loops/` folder that travels with the `.exe`
 
-Fixed center needle, 1:1 pointer scrubbing, A/B loop markers, pinch/wheel zoom, three
-themes (Windows 2000, Windows 2000 Night, Midnight Blue).
+## Development
 
-## Superseded by
+```bash
+npm install
+npm start
+```
 
-**v0.3** — packaged as a standalone Electron Windows app. No local server needed; the
-renderer is served over a secure custom `app://` origin instead, and the loop library
-goes through native IPC file operations instead of HTTP.
+## Building
 
-## Note on the loop library
+```bash
+npm run dist
+```
 
-This checkpoint's actual saved loops (real audio recordings) are intentionally not
-included here — only the app source. `loops/` is present as an empty folder the app
-writes into.
+Produces an NSIS installer and a portable `.exe` in `dist/`.
+
+## Architecture notes
+
+- The renderer is served over a custom `app://` scheme (registered as a secure origin)
+  rather than `file://`. `AudioWorklet` requires a secure context, and `file://` pages are
+  treated as an opaque origin in Chromium — that's what blocks worklet loading if you try
+  to open the HTML directly in a browser.
+- Loop save/rename/delete go through `contextBridge` + IPC to the main process, which
+  validates every filename (sanitized charset, forced extension, and re-checked against the
+  loops directory) before touching disk.

@@ -2,6 +2,11 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
+<!-- Locked down to local resources only: this app never talks to the network. 'unsafe-inline'
+     is required because the app is deliberately a single self-contained file, and blob: is
+     required because the AudioWorklet processor is compiled from a Blob URL. Note there is
+     no 'unsafe-eval' — nothing here needs it. -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' 'unsafe-inline' blob:; worker-src 'self' blob:; child-src 'self' blob:; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob: data:; font-src 'self'; connect-src 'self' blob: data:">
 <title>Scratch Deck</title>
 <style>
   /* ---- Themes ----
@@ -619,7 +624,25 @@
   window.addEventListener('resize', resizeCanvases);
 
   // ---------- Load file ----------
-  loadBtn.addEventListener('click', () => fileInput.click());
+  loadBtn.addEventListener('click', async () => {
+    // Prefer the OS file dialog in the packaged app; the hidden <input type=file> is the
+    // browser fallback.
+    if (!window.audioAPI) { fileInput.click(); return; }
+    try {
+      const picked = await window.audioAPI.open();
+      if (!picked) return;
+      filenameEl.textContent = 'Initializing audio engine...';
+      await ensureAudioInit();
+      filenameEl.textContent = 'Decoding ' + picked.name + ' ...';
+      const audioBuffer = await audioCtx.decodeAudioData(picked.data);
+      filenameEl.textContent = picked.name;
+      currentName = picked.name.replace(/\.[^.]+$/, '');
+      await loadIntoEngine(audioBuffer);
+    } catch (err) {
+      filenameEl.textContent = 'Could not open that file';
+      console.error('Open failed:', err);
+    }
+  });
   fileInput.addEventListener('change', async (e) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -671,6 +694,34 @@
     await loadIntoEngine(audioBuffer);
   }
 
+  // ---------- Storage adapter ----------
+  // Packaged as an Electron app the loop library goes through IPC to the main process;
+  // opened in a browser it falls back to the serve.ps1 HTTP endpoints. Same file runs
+  // either way, so the web build stays usable for quick testing.
+  const IS_APP = !!window.loopAPI;
+  const Loops = {
+    list: () => IS_APP
+      ? window.loopAPI.list()
+      : fetch('/api/loops').then(r => r.json()),
+    save: (name, ab) => IS_APP
+      ? window.loopAPI.save(name, ab)
+      : fetch('/api/loops?name=' + encodeURIComponent(name),
+              { method: 'POST', headers: { 'Content-Type': 'audio/wav' }, body: ab }).then(r => r.json()),
+    read: (name) => IS_APP
+      ? window.loopAPI.read(name)
+      : fetch('/loops/' + encodeURIComponent(name)).then(r => {
+          if (!r.ok) throw new Error('HTTP ' + r.status);
+          return r.arrayBuffer();
+        }),
+    rename: (from, to) => IS_APP
+      ? window.loopAPI.rename(from, to)
+      : fetch('/api/loops/rename?from=' + encodeURIComponent(from) + '&to=' + encodeURIComponent(to),
+              { method: 'POST' }).then(r => r.json()),
+    remove: (name) => IS_APP
+      ? window.loopAPI.remove(name)
+      : fetch('/api/loops/delete?name=' + encodeURIComponent(name), { method: 'POST' }).then(r => r.json())
+  };
+
   // ---------- Loop export / library ----------
   // 16-bit PCM WAV. Browsers can decode MP3 but cannot encode it, and there is no MP3
   // encoder available here, so exports are lossless WAV rather than a lossy re-encode.
@@ -712,8 +763,7 @@
 
   async function refreshLoopLibrary(selectName) {
     try {
-      const res = await fetch('/api/loops');
-      const names = await res.json();
+      const names = await Loops.list();
       const list = Array.isArray(names) ? names : (names ? [names] : []);
       loopLibrary.innerHTML = '';
       if (!list.length) {
@@ -754,17 +804,12 @@
     const prev = filenameEl.textContent;
     filenameEl.textContent = 'Saving ' + name + ' ...';
     try {
-      const res = await fetch('/api/loops?name=' + encodeURIComponent(name), {
-        method: 'POST',
-        headers: { 'Content-Type': 'audio/wav' },
-        body: wav
-      });
-      if (!res.ok) throw new Error('HTTP ' + res.status);
-      const out = await res.json();
+      const out = await Loops.save(name, wav);
+      if (!out || !out.ok) throw new Error((out && out.error) || 'save failed');
       filenameEl.textContent = 'Saved to loops\\' + out.name;
       await refreshLoopLibrary(out.name);
     } catch (err) {
-      filenameEl.textContent = 'Export failed (is serve.ps1 running?)';
+      filenameEl.textContent = 'Export failed: ' + err.message;
       console.error('Export failed:', err);
       setTimeout(() => { filenameEl.textContent = prev; }, 4000);
     }
@@ -779,17 +824,15 @@
     const to = (chosen.trim() || base).replace(/\.wav$/i, '') + '.wav';
     if (to === from) return;
     try {
-      const res = await fetch('/api/loops/rename?from=' + encodeURIComponent(from) +
-                              '&to=' + encodeURIComponent(to), { method: 'POST' });
-      const out = await res.json();
-      if (!res.ok || !out.ok) {
-        filenameEl.textContent = 'Rename failed: ' + (out.error || res.status);
+      const out = await Loops.rename(from, to);
+      if (!out || !out.ok) {
+        filenameEl.textContent = 'Rename failed: ' + ((out && out.error) || 'unknown');
         return;
       }
       await refreshLoopLibrary(out.name);
       filenameEl.textContent = 'Renamed to ' + out.name;
     } catch (err) {
-      filenameEl.textContent = 'Rename failed (is serve.ps1 running?)';
+      filenameEl.textContent = 'Rename failed: ' + err.message;
       console.error('Rename failed:', err);
     }
   });
@@ -800,16 +843,15 @@
     // deleting a file is not undoable, so make the target explicit before doing it
     if (!window.confirm('Delete this saved loop permanently?\n\n' + name)) return;
     try {
-      const res = await fetch('/api/loops/delete?name=' + encodeURIComponent(name), { method: 'POST' });
-      const out = await res.json();
-      if (!res.ok || !out.ok) {
-        filenameEl.textContent = 'Delete failed: ' + (out.error || res.status);
+      const out = await Loops.remove(name);
+      if (!out || !out.ok) {
+        filenameEl.textContent = 'Delete failed: ' + ((out && out.error) || 'unknown');
         return;
       }
       await refreshLoopLibrary();
       filenameEl.textContent = 'Deleted ' + out.name;
     } catch (err) {
-      filenameEl.textContent = 'Delete failed (is serve.ps1 running?)';
+      filenameEl.textContent = 'Delete failed: ' + err.message;
       console.error('Delete failed:', err);
     }
   });
@@ -820,9 +862,7 @@
     filenameEl.textContent = 'Loading ' + name + ' ...';
     try {
       await ensureAudioInit();
-      const res = await fetch('/loops/' + encodeURIComponent(name));
-      if (!res.ok) throw new Error('HTTP ' + res.status);
-      const buf = await res.arrayBuffer();
+      const buf = await Loops.read(name);
       const audioBuffer = await audioCtx.decodeAudioData(buf);
       filenameEl.textContent = name;
       currentName = name.replace(/\.[^.]+$/, '');

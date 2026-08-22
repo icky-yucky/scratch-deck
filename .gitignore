@@ -1,0 +1,31 @@
+# Dependencies (huge, and reproducible from package.json via npm install)
+node_modules/
+
+# Build output (huge, and reproducible via npm run dist)
+dist/
+
+# Saved loop exports — these are real audio recordings, often copyrighted, and don't
+# belong in source control regardless of repo visibility. Folder structure is kept via
+# loops/.gitkeep so a fresh clone still has somewhere for the app to write to.
+loops/*
+!loops/.gitkeep
+
+# electron-builder debug output
+builder-debug.yml
+builder-effective-config.yaml
+
+# npm
+npm-debug.log*
+package-lock.json.bak
+
+# OS cruft
+Thumbs.db
+desktop.ini
+.DS_Store
+
+# Sync-conflict copies from cloud-sync tools (OneDrive etc.) — never intentional content
+*[Nn]ame clash*
+
+# Editor
+.vscode/
+*.swp
