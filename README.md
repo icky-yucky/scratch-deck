@@ -42,3 +42,7 @@ Produces an NSIS installer and a portable `.exe` in `dist/`.
 - Loop save/rename/delete go through `contextBridge` + IPC to the main process, which
   validates every filename (sanitized charset, forced extension, and re-checked against the
   loops directory) before touching disk.
+
+## License
+
+[MIT](LICENSE)
