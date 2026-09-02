@@ -45,4 +45,9 @@ Produces an NSIS installer and a portable `.exe` in `dist/`.
 
 ## License
 
-[MIT](LICENSE)
+Scratch Deck's own source is [MIT](LICENSE).
+
+The packaged Windows builds also ship the Electron runtime, which embeds
+Chromium and Node.js under their own licenses. See
+[THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md) for what is redistributed and
+where the full notice files land in an installed copy.
