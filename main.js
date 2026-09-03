@@ -2,6 +2,7 @@
 const { app, BrowserWindow, protocol, net, ipcMain, shell, dialog } = require('electron');
 const path = require('node:path');
 const fs = require('node:fs/promises');
+const crypto = require('node:crypto');
 const { pathToFileURL } = require('node:url');
 
 // The renderer is served over a custom app:// scheme rather than loaded from file://.
@@ -18,29 +19,84 @@ protocol.registerSchemesAsPrivileged([
 
 const RENDERER_DIR = path.join(__dirname, 'renderer');
 
-// Portable by design: loops live beside the executable so the whole folder can be copied
-// to another machine or a USB stick with the library intact. In dev there is no exe, so
-// fall back to the project folder.
-function loopsDir() {
-  return app.isPackaged
-    ? path.join(path.dirname(app.getPath('exe')), 'loops')
-    : path.join(__dirname, 'loops');
+// Audio is handed to the renderer as an app:// URL it can fetch, rather than as an
+// ArrayBuffer cloned across IPC. A whole DJ-length file crossing the boundary as one
+// structured clone meant several full copies resident at once; a fetch streams instead.
+const AUDIO_ROUTE = '__audio__/';
+const LOOP_ROUTE = '__loop__/';
+
+// token -> absolute path, for files the user picked in the native dialog. Bounded, because
+// this is a grant of read access and stale grants should not accumulate for the session.
+const openedAudio = new Map();
+const MAX_AUDIO_GRANTS = 8;
+
+function grantAudio(absPath) {
+  const token = crypto.randomUUID();
+  openedAudio.set(token, absPath);
+  while (openedAudio.size > MAX_AUDIO_GRANTS) {
+    openedAudio.delete(openedAudio.keys().next().value);
+  }
+  return token;
+}
+
+// Portable by design: loops live beside the executable so the whole folder can be copied to
+// another machine or a USB stick with the library intact. But an installer build can land in
+// Program Files, which a standard user cannot write to — and since every file operation
+// starts here, that would take the whole loop library down rather than fail one save. So the
+// exe-adjacent folder is a preference, not an assumption: probe it, and fall back to
+// userData when it is not actually writable.
+let cachedLoopsDir = null;
+
+async function isWritable(dir) {
+  const probe = path.join(dir, `.write-probe-${process.pid}`);
+  try {
+    await fs.writeFile(probe, '');
+    await fs.unlink(probe);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 async function ensureLoopsDir() {
-  const dir = loopsDir();
-  await fs.mkdir(dir, { recursive: true });
-  return dir;
+  if (cachedLoopsDir) return cachedLoopsDir;
+
+  const candidates = app.isPackaged
+    ? [path.join(path.dirname(app.getPath('exe')), 'loops'), path.join(app.getPath('userData'), 'loops')]
+    : [path.join(__dirname, 'loops')];
+
+  for (const dir of candidates) {
+    try {
+      await fs.mkdir(dir, { recursive: true });
+      // access(W_OK) is unreliable for directories on Windows, so actually write something.
+      if (await isWritable(dir)) {
+        cachedLoopsDir = dir;
+        return dir;
+      }
+    } catch {
+      /* try the next candidate */
+    }
+  }
+
+  const fallback = path.join(app.getPath('userData'), 'loops');
+  await fs.mkdir(fallback, { recursive: true });
+  cachedLoopsDir = fallback;
+  return fallback;
 }
 
-// Filenames arrive from the renderer, so treat them as untrusted: strip any path
-// components, restrict the charset, and force the extension. Every resolved path is then
-// re-checked against the loops directory before any file operation touches disk.
+// Filenames arrive from the renderer, so treat them as untrusted: strip any path components,
+// restrict the charset, refuse names Windows reserves for devices, and force the extension.
+// Every resolved path is then re-checked against the loops directory before touching disk.
+const WINDOWS_RESERVED = /^(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])$/i;
+
 function safeName(name) {
   let n = path.basename(String(name || 'loop'));
   n = n.replace(/[^A-Za-z0-9._-]/g, '_');
-  if (!/\.wav$/i.test(n)) n += '.wav';
-  return n;
+  n = n.replace(/\.wav$/i, '');
+  if (!n || /^\.+$/.test(n)) n = 'loop';
+  // CON.wav still resolves to the console device on Windows, so give it a real name.
+  if (WINDOWS_RESERVED.test(n)) n = `_${n}`;
+  return `${n}.wav`;
 }
 
 async function resolveInLoops(name) {
@@ -51,51 +107,82 @@ async function resolveInLoops(name) {
   return full;
 }
 
+// Every operation answers with the same shape — {ok:true, ...} or {ok:false, error} — so the
+// renderer has one contract to handle instead of "some of these throw and some return".
 const Ops = {
   async list() {
-    const dir = await ensureLoopsDir();
-    const entries = await fs.readdir(dir, { withFileTypes: true });
-    const wavs = entries.filter((e) => e.isFile() && /\.wav$/i.test(e.name));
-    const stats = await Promise.all(
-      wavs.map(async (e) => ({ name: e.name, mtime: (await fs.stat(path.join(dir, e.name))).mtimeMs }))
-    );
-    stats.sort((a, b) => b.mtime - a.mtime); // newest first
-    return stats.map((s) => s.name);
+    try {
+      const dir = await ensureLoopsDir();
+      const entries = await fs.readdir(dir, { withFileTypes: true });
+      const wavs = entries.filter((e) => e.isFile() && /\.wav$/i.test(e.name));
+      const stats = await Promise.all(
+        wavs.map(async (e) => ({ name: e.name, mtime: (await fs.stat(path.join(dir, e.name))).mtimeMs }))
+      );
+      stats.sort((a, b) => b.mtime - a.mtime); // newest first
+      return { ok: true, names: stats.map((s) => s.name) };
+    } catch (err) {
+      return { ok: false, error: err.message };
+    }
   },
+
   async save(name, data) {
-    const full = await resolveInLoops(name);
-    await fs.writeFile(full, Buffer.from(data));
-    return { ok: true, name: path.basename(full) };
+    try {
+      const full = await resolveInLoops(name);
+      await fs.writeFile(full, Buffer.from(data));
+      return { ok: true, name: path.basename(full) };
+    } catch (err) {
+      return { ok: false, error: err.message };
+    }
   },
-  async read(name) {
-    const full = await resolveInLoops(name);
-    const buf = await fs.readFile(full);
-    // a plain ArrayBuffer slice, so the renderer can pass it straight to decodeAudioData
-    return buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength);
-  },
+
   async rename(from, to) {
-    const src = await resolveInLoops(from);
-    const dst = await resolveInLoops(to);
     try {
-      await fs.access(src);
-    } catch {
-      return { ok: false, error: 'not found' };
+      const src = await resolveInLoops(from);
+      const dst = await resolveInLoops(to);
+      if (src === dst) return { ok: true, name: path.basename(dst) };
+
+      try {
+        await fs.access(src);
+      } catch {
+        return { ok: false, error: 'not found' };
+      }
+
+      // link() fails with EEXIST rather than overwriting, which makes "never clobber" a
+      // real guarantee instead of a check that something could slip between.
+      try {
+        await fs.link(src, dst);
+        await fs.unlink(src);
+        return { ok: true, name: path.basename(dst) };
+      } catch (err) {
+        if (err.code === 'EEXIST') return { ok: false, error: 'name already exists' };
+        // exFAT USB sticks — the portable use case — have no hard links. Fall back to
+        // check-then-rename, which leaves a narrow race no worse than the original.
+        if (!['EPERM', 'ENOSYS', 'EXDEV', 'EMLINK', 'ENOTSUP'].includes(err.code)) throw err;
+      }
+
+      try {
+        await fs.access(dst);
+        return { ok: false, error: 'name already exists' };
+      } catch { /* free to use */ }
+      await fs.rename(src, dst);
+      return { ok: true, name: path.basename(dst) };
+    } catch (err) {
+      return { ok: false, error: err.message };
     }
-    try {
-      await fs.access(dst);
-      return { ok: false, error: 'name already exists' }; // never silently clobber
-    } catch { /* free to use */ }
-    await fs.rename(src, dst);
-    return { ok: true, name: path.basename(dst) };
   },
+
   async remove(name) {
-    const full = await resolveInLoops(name);
     try {
-      await fs.unlink(full);
-    } catch {
-      return { ok: false, error: 'not found' };
+      const full = await resolveInLoops(name);
+      try {
+        await fs.unlink(full);
+      } catch {
+        return { ok: false, error: 'not found' };
+      }
+      return { ok: true, name: path.basename(full) };
+    } catch (err) {
+      return { ok: false, error: err.message };
     }
-    return { ok: true, name: path.basename(full) };
   }
 };
 
@@ -112,19 +199,74 @@ function createWindow() {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
-      sandbox: false
+      // The preload imports contextBridge and ipcRenderer only — no fs, no path, no Node —
+      // so there is nothing here that needs the Chromium sandbox switched off.
+      sandbox: true
     }
   });
+
+  // Content is entirely local. Nothing should be able to navigate the window elsewhere or
+  // open a second one; external links go to the user's real browser instead.
+  win.webContents.on('will-navigate', (event, url) => {
+    if (new URL(url).origin !== 'app://scratchdeck') event.preventDefault();
+  });
+  win.webContents.setWindowOpenHandler(({ url }) => {
+    if (/^https?:/.test(url)) shell.openExternal(url);
+    return { action: 'deny' };
+  });
+
   win.loadURL('app://scratchdeck/index.html');
   return win;
 }
 
+// Two copies writing the same loops folder is a good way to lose a file. Second launch
+// hands focus to the window that already exists.
+const gotLock = app.requestSingleInstanceLock();
+if (!gotLock) {
+  app.quit();
+} else {
+  app.on('second-instance', () => {
+    const [win] = BrowserWindow.getAllWindows();
+    if (win) {
+      if (win.isMinimized()) win.restore();
+      win.focus();
+    }
+  });
+  start();
+}
+
+function start() {
 app.whenReady().then(async () => {
   protocol.handle('app', async (request) => {
-    const url = new URL(request.url);
-    const rel = decodeURIComponent(url.pathname).replace(/^\/+/, '') || 'index.html';
-    const full = path.join(RENDERER_DIR, rel);
+    let rel;
+    try {
+      const url = new URL(request.url);
+      // A stray % makes this throw; answer with a status rather than a rejected fetch.
+      rel = decodeURIComponent(url.pathname).replace(/^\/+/, '');
+    } catch {
+      return new Response('bad request', { status: 400 });
+    }
+    if (!rel) rel = 'index.html';
+
+    // A file the user picked in the native dialog, addressed by one-time token.
+    if (rel.startsWith(AUDIO_ROUTE)) {
+      const target = openedAudio.get(rel.slice(AUDIO_ROUTE.length));
+      if (!target) return new Response('not found', { status: 404 });
+      return net.fetch(pathToFileURL(target).toString());
+    }
+
+    // A saved loop, resolved through the same containment check as every other file op.
+    if (rel.startsWith(LOOP_ROUTE)) {
+      try {
+        const full = await resolveInLoops(rel.slice(LOOP_ROUTE.length));
+        return net.fetch(pathToFileURL(full).toString());
+      } catch {
+        return new Response('forbidden', { status: 403 });
+      }
+    }
+
     // never serve anything outside the bundled renderer folder
+    const full = path.join(RENDERER_DIR, rel);
     const check = path.relative(RENDERER_DIR, full);
     if (check.startsWith('..') || path.isAbsolute(check)) {
       return new Response('forbidden', { status: 403 });
@@ -139,7 +281,6 @@ app.whenReady().then(async () => {
   // directly instead of reaching into Electron's private handler registry.
   ipcMain.handle('loops:list', () => Ops.list());
   ipcMain.handle('loops:save', (_e, name, data) => Ops.save(name, data));
-  ipcMain.handle('loops:read', (_e, name) => Ops.read(name));
   ipcMain.handle('loops:rename', (_e, from, to) => Ops.rename(from, to));
   ipcMain.handle('loops:delete', (_e, name) => Ops.remove(name));
 
@@ -151,7 +292,8 @@ app.whenReady().then(async () => {
 
   ipcMain.handle('loops:dir', async () => ensureLoopsDir());
 
-  // Native open dialog, so the app can load audio without a browser file input.
+  // Native open dialog, so the app can load audio without a browser file input. Returns a
+  // URL the renderer fetches rather than the file's bytes.
   ipcMain.handle('audio:open', async () => {
     const res = await dialog.showOpenDialog({
       title: 'Open audio file',
@@ -163,11 +305,7 @@ app.whenReady().then(async () => {
     });
     if (res.canceled || !res.filePaths.length) return null;
     const p = res.filePaths[0];
-    const buf = await fs.readFile(p);
-    return {
-      name: path.basename(p),
-      data: buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength)
-    };
+    return { name: path.basename(p), url: `app://scratchdeck/${AUDIO_ROUTE}${grantAudio(p)}` };
   });
 
   const win = createWindow();
@@ -214,12 +352,13 @@ app.whenReady().then(async () => {
         // exercise the real file operations end to end, cleaning up after itself
         const wav = new Uint8Array(44).buffer;
         result.ipc = {};
+        result.ipc.loopsDir = await ensureLoopsDir();
+        result.ipc.dirWritable = await isWritable(result.ipc.loopsDir);
         result.ipc.saved = await Ops.save('__smoke__.wav', wav);
-        result.ipc.listedSmoke = (await Ops.list()).includes('__smoke__.wav');
-        result.ipc.readBytes = (await Ops.read('__smoke__.wav')).byteLength;
+        result.ipc.listedSmoke = (await Ops.list()).names.includes('__smoke__.wav');
         result.ipc.renamed = await Ops.rename('__smoke__.wav', '__smoke2__.wav');
         result.ipc.collisionRefused =
-          (await Ops.save('__smoke__.wav', wav)) &&
+          (await Ops.save('__smoke__.wav', wav)).ok &&
           (await Ops.rename('__smoke__.wav', '__smoke2__.wav')).error === 'name already exists';
         await Ops.remove('__smoke__.wav');
         result.ipc.removed = await Ops.remove('__smoke2__.wav');
@@ -228,14 +367,25 @@ app.whenReady().then(async () => {
         const esc = await Ops.save('..\\..\\escaped.wav', wav);
         result.ipc.escapeContained = esc.name === '.._.._escaped.wav' || esc.name === 'escaped.wav';
         await Ops.remove(esc.name);
-        result.ipc.cleanedUp = !(await Ops.list()).some(n => /__smoke|escaped/.test(n));
+        // a Windows device name must not survive as one
+        const dev = await Ops.save('CON', wav);
+        result.ipc.reservedRenamed = dev.ok && dev.name === '_CON.wav';
+        await Ops.remove(dev.name);
+        // the loop route must serve a saved file and refuse an escape
+        await Ops.save('__route__.wav', wav);
+        const okRes = await net.fetch(`app://scratchdeck/${LOOP_ROUTE}__route__.wav`);
+        result.ipc.loopRouteServes = okRes.status === 200;
+        await Ops.remove('__route__.wav');
+        result.ipc.cleanedUp = !(await Ops.list()).names.some(n => /__smoke|escaped|__route__|_CON/.test(n));
       } catch (e) {
         result = { fatal: e.message };
       }
       result.consoleErrors = errors;
       console.log('SMOKE_RESULT ' + JSON.stringify(result));
       const bad = result.fatal || result.audioWorklet !== 'ok' ||
-                  !result.hasLoopAPI || result.controls.length || errors.length;
+                  !result.hasLoopAPI || result.controls.length || errors.length ||
+                  !result.ipc.escapeContained || !result.ipc.reservedRenamed ||
+                  !result.ipc.loopRouteServes || !result.ipc.cleanedUp;
       app.exit(bad ? 1 : 0);
     });
   }
@@ -244,6 +394,7 @@ app.whenReady().then(async () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
   });
 });
+}
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit();

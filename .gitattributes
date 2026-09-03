@@ -1,0 +1,3 @@
+# Keep repo-only files out of `git archive` source archives.
+.gitattributes export-ignore
+.gitignore    export-ignore

@@ -634,7 +634,11 @@
       filenameEl.textContent = 'Initializing audio engine...';
       await ensureAudioInit();
       filenameEl.textContent = 'Decoding ' + picked.name + ' ...';
-      const audioBuffer = await audioCtx.decodeAudioData(picked.data);
+      // Main hands back a URL rather than the bytes, so the file streams in over the
+      // app:// scheme instead of being cloned whole across IPC.
+      const res = await fetch(picked.url);
+      if (!res.ok) throw new Error('could not read that file (HTTP ' + res.status + ')');
+      const audioBuffer = await audioCtx.decodeAudioData(await res.arrayBuffer());
       filenameEl.textContent = picked.name;
       currentName = picked.name.replace(/\.[^.]+$/, '');
       await loadIntoEngine(audioBuffer);
@@ -675,7 +679,7 @@
     try {
       await ensureAudioInit();
     } catch (err) {
-      filenameEl.textContent = 'Audio engine failed to start (see console). If you opened this file directly, try running it via a local server instead.';
+      filenameEl.textContent = 'Audio engine failed to start — see the console for details.';
       console.error('AudioWorklet init failed:', err);
       return;
     }
@@ -695,31 +699,26 @@
   }
 
   // ---------- Storage adapter ----------
-  // Packaged as an Electron app the loop library goes through IPC to the main process;
-  // opened in a browser it falls back to the serve.ps1 HTTP endpoints. Same file runs
-  // either way, so the web build stays usable for quick testing.
+  // The loop library goes through IPC to the main process. There used to be a second path
+  // here that spoke to serve.ps1's HTTP endpoints for running the page in a plain browser,
+  // but serve.ps1 was removed at v0.3 and the page needs the app:// scheme for AudioWorklet
+  // anyway, so that branch pointed at a server that no longer exists.
   const IS_APP = !!window.loopAPI;
   const Loops = {
     list: () => IS_APP
       ? window.loopAPI.list()
-      : fetch('/api/loops').then(r => r.json()),
+      : Promise.resolve({ ok: false, error: 'loop library needs the desktop app' }),
     save: (name, ab) => IS_APP
       ? window.loopAPI.save(name, ab)
-      : fetch('/api/loops?name=' + encodeURIComponent(name),
-              { method: 'POST', headers: { 'Content-Type': 'audio/wav' }, body: ab }).then(r => r.json()),
-    read: (name) => IS_APP
-      ? window.loopAPI.read(name)
-      : fetch('/loops/' + encodeURIComponent(name)).then(r => {
-          if (!r.ok) throw new Error('HTTP ' + r.status);
-          return r.arrayBuffer();
-        }),
+      : Promise.resolve({ ok: false, error: 'loop library needs the desktop app' }),
+    // A URL the page fetches, rather than the file's bytes cloned across IPC.
+    url: (name) => IS_APP ? window.loopAPI.url(name) : null,
     rename: (from, to) => IS_APP
       ? window.loopAPI.rename(from, to)
-      : fetch('/api/loops/rename?from=' + encodeURIComponent(from) + '&to=' + encodeURIComponent(to),
-              { method: 'POST' }).then(r => r.json()),
+      : Promise.resolve({ ok: false, error: 'loop library needs the desktop app' }),
     remove: (name) => IS_APP
       ? window.loopAPI.remove(name)
-      : fetch('/api/loops/delete?name=' + encodeURIComponent(name), { method: 'POST' }).then(r => r.json())
+      : Promise.resolve({ ok: false, error: 'loop library needs the desktop app' })
   };
 
   // ---------- Loop export / library ----------
@@ -763,8 +762,9 @@
 
   async function refreshLoopLibrary(selectName) {
     try {
-      const names = await Loops.list();
-      const list = Array.isArray(names) ? names : (names ? [names] : []);
+      const res = await Loops.list();
+      if (!res || !res.ok) throw new Error((res && res.error) || 'could not read the loops folder');
+      const list = res.names || [];
       loopLibrary.innerHTML = '';
       if (!list.length) {
         loopLibrary.innerHTML = '<option value="">(none saved)</option>';
@@ -783,10 +783,11 @@
       renameLoopBtn.disabled = false;
       deleteLoopBtn.disabled = false;
     } catch (err) {
-      loopLibrary.innerHTML = '<option value="">(server offline)</option>';
+      loopLibrary.innerHTML = '<option value="">(loops folder unavailable)</option>';
       loadLoopBtn.disabled = true;
       renameLoopBtn.disabled = true;
       deleteLoopBtn.disabled = true;
+      console.error('Loop library unavailable:', err);
     }
   }
 
@@ -862,8 +863,9 @@
     filenameEl.textContent = 'Loading ' + name + ' ...';
     try {
       await ensureAudioInit();
-      const buf = await Loops.read(name);
-      const audioBuffer = await audioCtx.decodeAudioData(buf);
+      const res = await fetch(Loops.url(name));
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      const audioBuffer = await audioCtx.decodeAudioData(await res.arrayBuffer());
       filenameEl.textContent = name;
       currentName = name.replace(/\.[^.]+$/, '');
       await loadIntoEngine(audioBuffer);
@@ -1150,7 +1152,7 @@ registerProcessor('scratch-processor', ScratchProcessor);
     const blob = new Blob([WORKLET_SRC], { type: 'application/javascript' });
     const url = URL.createObjectURL(blob);
     const timeout = new Promise((_, reject) =>
-      setTimeout(() => reject(new Error('audioWorklet.addModule timed out after 8s — this browser/origin likely blocks worklet module loading (common with file:// pages). Try serving the page over http://localhost instead.')), 8000)
+      setTimeout(() => reject(new Error('audioWorklet.addModule timed out after 8s. The page must be served over the app:// scheme for the worklet to load — check that the custom protocol handler registered before the window opened.')), 8000)
     );
     await Promise.race([audioCtx.audioWorklet.addModule(url), timeout]);
     workletNode = new AudioWorkletNode(audioCtx, 'scratch-processor', {
